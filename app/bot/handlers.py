@@ -328,8 +328,15 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 @authorized_only
 async def btn_calendar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("⏳ 正在获取经济日历...")
+    # Get watchlist for earnings filtering
+    db = SessionLocal()
+    try:
+        items = db.query(WatchlistItem).filter(WatchlistItem.is_active == True).all()  # noqa: E712
+        watchlist = [i.ticker for i in items]
+    finally:
+        db.close()
     from app.bot.calendar import get_upcoming_events
-    result = await get_upcoming_events(days=14)
+    result = await get_upcoming_events(days=14, watchlist=watchlist)
     if len(result) > 4096:
         result = result[:4090] + "\n..."
     await update.message.reply_text(result, parse_mode="Markdown", reply_markup=MAIN_KEYBOARD)
