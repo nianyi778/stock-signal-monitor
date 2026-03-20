@@ -97,7 +97,40 @@ async def btn_scan(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     loop = asyncio.get_event_loop()
     try:
         await loop.run_in_executor(None, scan_all_stocks)
-        await update.message.reply_text("✅ 扫描完成，有信号已推送。", reply_markup=MAIN_KEYBOARD)
+        # 查 DB 回显本次扫描结果
+        db = SessionLocal()
+        try:
+            from datetime import datetime, timedelta, UTC
+            recent = datetime.now(UTC) - timedelta(minutes=5)
+            signals = (
+                db.query(Signal)
+                .filter(Signal.triggered_at >= recent)
+                .order_by(Signal.signal_level.desc(), Signal.confidence.desc())
+                .all()
+            )
+            if not signals:
+                await update.message.reply_text("✅ 扫描完成，未检测到信号。", reply_markup=MAIN_KEYBOARD)
+                return
+            lines = ["✅ *扫描完成*\n"]
+            for s in signals:
+                emoji = {"STRONG": "🔴", "WEAK": "🟡", "WATCH": "⚪"}.get(s.signal_level, "⚪")
+                direction = "🟢" if s.signal_type == "BUY" else "🔴" if s.signal_type == "SELL" else "🟡"
+                pushed_tag = " ✈️已推送" if s.pushed else ""
+                lines.append(
+                    f"{direction} *{s.ticker}* [{s.signal_level}] {s.signal_type}\n"
+                    f"  {s.indicator} | 置信度 {s.confidence}%{pushed_tag}\n"
+                    f"  _{s.message}_"
+                )
+            summary = f"\n📊 共 {len(signals)} 条信号"
+            strong_count = sum(1 for s in signals if s.signal_level == "STRONG")
+            if strong_count:
+                summary += f"（{strong_count} 条强信号已推送）"
+            else:
+                summary += "（无强信号，未推送）"
+            lines.append(summary)
+            await update.message.reply_text("\n".join(lines), parse_mode="Markdown", reply_markup=MAIN_KEYBOARD)
+        finally:
+            db.close()
     except Exception as e:
         logger.error(f"Scan error: {e}")
         await update.message.reply_text("❌ 扫描出错，请查看日志。", reply_markup=MAIN_KEYBOARD)
