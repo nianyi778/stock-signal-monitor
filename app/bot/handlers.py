@@ -65,13 +65,13 @@ CN_TICKER_MAP = {
 def _extract_ticker(text: str) -> str | None:
     """从自然语言提取股票代码。"""
     text = text.strip()
-    # 直接是大写代码
-    if re.fullmatch(r"[A-Z]{1,5}", text.upper()):
-        return text.upper()
-    # 中文映射
+    # 中文映射优先
     for cn, ticker in CN_TICKER_MAP.items():
         if cn in text:
             return ticker
+    # 直接是大写代码（原始输入必须是全大写，排除 "apple" 这类英文单词）
+    if re.fullmatch(r"[A-Z]{1,5}", text):
+        return text
     # 文本中包含大写字母序列
     match = re.search(r"\b([A-Z]{1,5})\b", text.upper())
     if match:

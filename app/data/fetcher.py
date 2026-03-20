@@ -28,6 +28,11 @@ def fetch_ohlcv(
         if df.empty or len(df) < 30:
             return None
 
+        # yfinance >= 0.2.31 returns MultiIndex columns for single ticker
+        # e.g. ('Close', 'AAPL') — flatten to just 'Close'
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.droplevel(1)
+
         return df
     except Exception:
         return None
