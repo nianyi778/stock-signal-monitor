@@ -25,8 +25,8 @@ app = FastAPI(title="Stock Signal Monitor", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
+    allow_origins=["http://localhost:8000"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
 

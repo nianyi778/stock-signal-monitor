@@ -2,6 +2,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.dependencies import verify_api_key
 from app.models import WatchlistItem
 from app.schemas import WatchlistItemCreate, WatchlistItemResponse
 
@@ -13,7 +14,7 @@ def list_stocks(db: Session = Depends(get_db)):
     return db.query(WatchlistItem).filter(WatchlistItem.is_active == True).all()  # noqa: E712
 
 
-@router.post("/", response_model=WatchlistItemResponse, status_code=201)
+@router.post("/", response_model=WatchlistItemResponse, status_code=201, dependencies=[Depends(verify_api_key)])
 def add_stock(item: WatchlistItemCreate, db: Session = Depends(get_db)):
     # Check if already exists
     existing = db.query(WatchlistItem).filter(WatchlistItem.ticker == item.ticker.upper()).first()
@@ -41,7 +42,7 @@ def add_stock(item: WatchlistItemCreate, db: Session = Depends(get_db)):
     return db_item
 
 
-@router.delete("/{ticker}", status_code=200)
+@router.delete("/{ticker}", status_code=200, dependencies=[Depends(verify_api_key)])
 def delete_stock(ticker: str, db: Session = Depends(get_db)):
     item = db.query(WatchlistItem).filter(WatchlistItem.ticker == ticker.upper()).first()
     if not item:
@@ -51,7 +52,7 @@ def delete_stock(ticker: str, db: Session = Depends(get_db)):
     return {"status": "deleted", "ticker": ticker.upper()}
 
 
-@router.post("/scan", status_code=202)
+@router.post("/scan", status_code=202, dependencies=[Depends(verify_api_key)])
 def trigger_scan(background_tasks: BackgroundTasks):
     from app.scheduler import scan_all_stocks_sync  # noqa: PLC0415
 

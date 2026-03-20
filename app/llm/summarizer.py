@@ -4,10 +4,17 @@ from openai import AsyncOpenAI
 from app.config import settings
 from app.signals.engine import SignalResult
 
-client = AsyncOpenAI(
-    api_key=settings.openai_api_key,
-    base_url=settings.openai_base_url  # Sub2API proxy
-)
+_client = None
+
+
+def _get_client() -> AsyncOpenAI:
+    global _client
+    if _client is None:
+        _client = AsyncOpenAI(
+            api_key=settings.openai_api_key,
+            base_url=settings.openai_base_url,  # Sub2API proxy
+        )
+    return _client
 
 
 async def summarize_signals(
@@ -48,7 +55,7 @@ async def summarize_signals(
 简洁扼要，不超过150字。"""
 
     try:
-        response = await client.chat.completions.create(
+        response = await _get_client().chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "user", "content": prompt}

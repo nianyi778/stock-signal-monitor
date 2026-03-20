@@ -1,11 +1,11 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class WatchlistItemCreate(BaseModel):
-    ticker: str
+    ticker: str = Field(..., min_length=1, max_length=5, pattern=r'^[A-Za-z]{1,5}$')
     name: Optional[str] = None
 
 

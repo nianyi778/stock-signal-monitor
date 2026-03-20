@@ -23,7 +23,7 @@ def list_signals(
 @router.get("/{ticker}", response_model=list[SignalResponse])
 def get_signals_for_ticker(
     ticker: str,
-    limit: int = Query(default=20),
+    limit: int = Query(default=20, le=200),
     db: Session = Depends(get_db),
 ):
     return (

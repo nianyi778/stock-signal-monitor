@@ -50,7 +50,8 @@ def run_signals(ticker: str) -> list[SignalResult]:
         prev_hist = hist_valid.iloc[-2]
         curr_hist = hist_valid.iloc[-1]
         if prev_hist < 0 and curr_hist > 0:
-            base_confidence = min(95, int(abs(curr_hist) * 1000))
+            hist_pct = abs(curr_hist) / close.iloc[-1] * 100  # as percentage of price
+            base_confidence = min(95, int(hist_pct * 500))  # 0.1% diff → 50 confidence
             raw_signals.append(SignalResult(
                 ticker=ticker,
                 signal_type="BUY",
@@ -62,7 +63,8 @@ def run_signals(ticker: str) -> list[SignalResult]:
                 message=f"MACD histogram crossed above zero (BUY)",
             ))
         elif prev_hist > 0 and curr_hist < 0:
-            base_confidence = min(95, int(abs(curr_hist) * 1000))
+            hist_pct = abs(curr_hist) / close.iloc[-1] * 100  # as percentage of price
+            base_confidence = min(95, int(hist_pct * 500))  # 0.1% diff → 50 confidence
             raw_signals.append(SignalResult(
                 ticker=ticker,
                 signal_type="SELL",
@@ -189,7 +191,8 @@ def run_signals(ticker: str) -> list[SignalResult]:
     if len(buy_signals) >= 2:
         indicator_str = "+".join(s.indicator for s in buy_signals)
         max_conf = max(s.confidence for s in buy_signals)
-        confluence_conf = min(95, max_conf + 20)
+        confluence_boost = 10 * len(buy_signals)  # 2 indicators = +20, 3 = +30
+        confluence_conf = min(95, max_conf + confluence_boost)
         strong_buy = SignalResult(
             ticker=ticker,
             signal_type="BUY",
@@ -205,7 +208,8 @@ def run_signals(ticker: str) -> list[SignalResult]:
     if len(sell_signals) >= 2:
         indicator_str = "+".join(s.indicator for s in sell_signals)
         max_conf = max(s.confidence for s in sell_signals)
-        confluence_conf = min(95, max_conf + 20)
+        confluence_boost = 10 * len(sell_signals)  # 2 indicators = +20, 3 = +30
+        confluence_conf = min(95, max_conf + confluence_boost)
         strong_sell = SignalResult(
             ticker=ticker,
             signal_type="SELL",

@@ -214,6 +214,9 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     if data.startswith("add:"):
         ticker = data.split(":", 1)[1]
+        if not re.fullmatch(r'[A-Z]{1,5}', ticker):
+            await query.edit_message_text("❌ 无效的股票代码")
+            return
         name = context.user_data.get("pending_name", ticker)
         db = SessionLocal()
         try:
@@ -233,6 +236,9 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     elif data.startswith("del:"):
         ticker = data.split(":", 1)[1]
+        if not re.fullmatch(r'[A-Z]{1,5}', ticker):
+            await query.edit_message_text("❌ 无效的股票代码")
+            return
         db = SessionLocal()
         try:
             item = db.query(WatchlistItem).filter(WatchlistItem.ticker == ticker).first()
@@ -245,6 +251,9 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     elif data.startswith("sig:"):
         ticker = data.split(":", 1)[1]
+        if not re.fullmatch(r'[A-Z]{1,5}', ticker):
+            await query.edit_message_text("❌ 无效的股票代码")
+            return
         db = SessionLocal()
         try:
             signals = (

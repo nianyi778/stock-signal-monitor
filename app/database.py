@@ -10,10 +10,16 @@ if "ssl_mode=VERIFY_IDENTITY" in _url:
     _url = _url.replace("?ssl_mode=VERIFY_IDENTITY", "").replace("&ssl_mode=VERIFY_IDENTITY", "")
     _connect_args = {"ssl_verify_cert": True, "ssl_verify_identity": True}
 
+# SQLite (used in tests) does not support pool_size/max_overflow
+_is_sqlite = _url.startswith("sqlite")
+_pool_kwargs = {} if _is_sqlite else {"pool_size": 5, "max_overflow": 10}
+
 engine = create_engine(
     _url,
     connect_args=_connect_args,
     pool_recycle=3600,
+    pool_pre_ping=True,
+    **_pool_kwargs,
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

@@ -33,9 +33,9 @@ async def test_summarize_signals_success():
     mock_response.choices = [MagicMock()]
     mock_response.choices[0].message.content = "看多。建议买入149-150元区间，止损147元，目标155元。"
 
-    with patch("app.llm.summarizer.client") as mock_client:
-        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
-
+    mock_client = MagicMock()
+    mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+    with patch("app.llm.summarizer._get_client", return_value=mock_client):
         result = await summarize_signals("AAPL", signals, price_context)
 
         assert isinstance(result, str)
@@ -76,9 +76,9 @@ async def test_summarize_signals_fallback():
         "resistance": 205.0,
     }
 
-    with patch("app.llm.summarizer.client") as mock_client:
-        mock_client.chat.completions.create = AsyncMock(side_effect=Exception("API error"))
-
+    mock_client = MagicMock()
+    mock_client.chat.completions.create = AsyncMock(side_effect=Exception("API error"))
+    with patch("app.llm.summarizer._get_client", return_value=mock_client):
         result = await summarize_signals("TSLA", signals, price_context)
 
         assert isinstance(result, str)
@@ -115,9 +115,9 @@ async def test_prompt_includes_ticker():
     mock_response.choices = [MagicMock()]
     mock_response.choices[0].message.content = "看多。建议买入140元区间。"
 
-    with patch("app.llm.summarizer.client") as mock_client:
-        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
-
+    mock_client = MagicMock()
+    mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+    with patch("app.llm.summarizer._get_client", return_value=mock_client):
         await summarize_signals("GOOGL", signals, price_context)
 
         # Verify that the function was called
