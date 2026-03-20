@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import Boolean, DateTime, Float, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
@@ -16,7 +16,7 @@ class WatchlistItem(Base):
     name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        DateTime, default=lambda: datetime.now(UTC), nullable=False
     )
     # Reserved for future SaaS multi-tenant expansion
     user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -49,7 +49,7 @@ class Signal(Base):
     # pushed: whether this signal has already been sent via notification
     pushed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     triggered_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        DateTime, default=lambda: datetime.now(UTC), nullable=False
     )
     # Reserved for future SaaS multi-tenant expansion
     user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)

@@ -9,6 +9,18 @@ class WatchlistItemCreate(BaseModel):
     name: Optional[str] = None
 
 
+class SignalCreate(BaseModel):
+    ticker: str
+    signal_type: str  # "BUY" / "SELL" / "WATCH"
+    indicator: str
+    price: float
+    target_price: Optional[float] = None
+    message: str
+    confidence: int
+    signal_level: str  # "STRONG" / "WEAK" / "WATCH"
+    user_id: Optional[int] = None
+
+
 class WatchlistItemResponse(BaseModel):
     id: int
     ticker: str
