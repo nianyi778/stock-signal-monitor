@@ -113,16 +113,41 @@ def scan_all_stocks_sync() -> None:
     scan_all_stocks()
 
 
+def refresh_calendar_job() -> None:
+    """Daily job to refresh economic calendar from all sources."""
+    from app.bot.calendar import refresh_calendar
+    try:
+        result = refresh_calendar()
+        logger.info(f"Calendar refresh: {result}")
+    except Exception as e:
+        logger.error(f"Calendar refresh error: {e}", exc_info=True)
+
+
 def start_scheduler() -> None:
-    """Start APScheduler with daily cron job at configured hour."""
+    """Start APScheduler with daily cron jobs."""
     _scheduler.add_job(
         scan_all_stocks,
         CronTrigger(hour=settings.scheduler_cron_hour, minute=0, timezone="America/New_York"),
         id="daily_scan",
         replace_existing=True,
     )
+    # Calendar refresh: twice daily (8:00 and 20:00 ET)
+    _scheduler.add_job(
+        refresh_calendar_job,
+        CronTrigger(hour=8, minute=0, timezone="America/New_York"),
+        id="calendar_refresh_am",
+        replace_existing=True,
+    )
+    _scheduler.add_job(
+        refresh_calendar_job,
+        CronTrigger(hour=20, minute=0, timezone="America/New_York"),
+        id="calendar_refresh_pm",
+        replace_existing=True,
+    )
+    # Also refresh on startup
+    refresh_calendar_job()
     _scheduler.start()
-    logger.info(f"Scheduler started. Daily scan at {settings.scheduler_cron_hour}:00 ET")
+    logger.info(f"Scheduler started. Scan at {settings.scheduler_cron_hour}:00 ET, calendar at 8:00/20:00 ET")
 
 
 def stop_scheduler() -> None:

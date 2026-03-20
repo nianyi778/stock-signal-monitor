@@ -53,3 +53,21 @@ class Signal(Base):
     )
     # Reserved for future SaaS multi-tenant expansion
     user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class EconomicEvent(Base):
+    """Economic calendar events (FOMC, CPI, NFP, earnings, etc.)."""
+
+    __tablename__ = "economic_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    event_date: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)  # "FOMC" / "CPI" / "NFP" / "EARNINGS" / "GDP" / "PCE"
+    title: Mapped[str] = mapped_column(String(256), nullable=False)
+    detail: Mapped[str] = mapped_column(String(512), default="")
+    impact: Mapped[str] = mapped_column(String(8), default="高")  # "高" / "中" / "低"
+    source: Mapped[str] = mapped_column(String(32), default="")  # "fed" / "bls" / "finnhub"
+    ticker: Mapped[str | None] = mapped_column(String(16), nullable=True)  # for earnings
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False
+    )
