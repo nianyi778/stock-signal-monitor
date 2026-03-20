@@ -43,7 +43,7 @@ def _sync_official_events(db) -> int:
     """Upsert official economic events into DB. Returns count added."""
     count = 0
     for e in _OFFICIAL_EVENTS:
-        event_date = datetime.fromisoformat(e["date"])
+        event_date = datetime.fromisoformat(e["date"]).replace(tzinfo=UTC)
         exists = db.query(EconomicEvent).filter(
             EconomicEvent.event_date == event_date,
             EconomicEvent.event_type == e["type"],
@@ -91,7 +91,7 @@ def _sync_finnhub_earnings(db) -> int:
         sym = e.get("symbol", "")
         if sym not in watchlist_set:
             continue
-        event_date = datetime.fromisoformat(e["date"])
+        event_date = datetime.fromisoformat(e["date"]).replace(tzinfo=UTC)
         exists = db.query(EconomicEvent).filter(
             EconomicEvent.event_date == event_date,
             EconomicEvent.event_type == "EARNINGS",

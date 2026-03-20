@@ -63,7 +63,7 @@ async def summarize_signals(
             temperature=0.7,
             max_tokens=200,
         )
-        return response.choices[0].message.content
+        return response.choices[0].message.content or _format_fallback(ticker, signals)
     except Exception:
         # Graceful fallback: return formatted raw signal text
         return _format_fallback(ticker, signals)

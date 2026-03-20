@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Path, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -22,7 +22,7 @@ def list_signals(
 
 @router.get("/{ticker}", response_model=list[SignalResponse])
 def get_signals_for_ticker(
-    ticker: str,
+    ticker: str = Path(..., max_length=10, pattern=r"^[A-Za-z]{1,10}$"),
     limit: int = Query(default=20, le=200),
     db: Session = Depends(get_db),
 ):

@@ -80,7 +80,7 @@ def _build_action(score: float, price: float, support: float | None, resistance:
     if price:
         if score >= 1.5 and support:
             buy_low = round(support * 1.002, 2)
-            buy_high = round(min(price * 1.01, price), 2)
+            buy_high = round(price * 1.01, 2)
             stop = round(support * 0.97, 2)
             lines.append(f"  📥 买入区间: ${buy_low:.2f} ~ ${buy_high:.2f}")
             lines.append(f"  🛑 止损参考: ${stop:.2f}（支撑下方 3%）")
@@ -88,7 +88,7 @@ def _build_action(score: float, price: float, support: float | None, resistance:
                 upside = _pct(resistance, price)
                 lines.append(f"  🎯 目标阻力: ${resistance:.2f}（{upside}）")
         elif score <= -1.5 and resistance:
-            sell_low = round(max(price * 0.99, price), 2)
+            sell_low = round(price * 0.99, 2)
             sell_high = round(resistance * 0.998, 2)
             lines.append(f"  📤 减仓区间: ${sell_low:.2f} ~ ${sell_high:.2f}")
             if support:

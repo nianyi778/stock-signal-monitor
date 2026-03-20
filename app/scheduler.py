@@ -83,7 +83,10 @@ def scan_all_stocks() -> None:
 
                 # Get price context for LLM
                 import yfinance as yf
+                import pandas as pd
                 hist = yf.download(ticker, period="5d", progress=False)
+                if hist is not None and isinstance(hist.columns, pd.MultiIndex):
+                    hist.columns = hist.columns.droplevel(1)
                 price_context = {
                     "current_price": push_signals[0].price,
                     "5d_change_pct": 0.0,

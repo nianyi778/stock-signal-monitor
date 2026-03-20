@@ -100,8 +100,8 @@ async def btn_scan(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         # 查 DB 回显本次扫描结果
         db = SessionLocal()
         try:
-            from datetime import datetime, timedelta
-            recent = datetime.utcnow() - timedelta(minutes=5)
+            from datetime import datetime, timedelta, UTC
+            recent = datetime.now(UTC) - timedelta(minutes=5)
             signals = (
                 db.query(Signal)
                 .filter(Signal.triggered_at >= recent)

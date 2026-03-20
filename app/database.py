@@ -1,3 +1,5 @@
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
@@ -7,7 +9,11 @@ from app.config import settings
 _url = settings.database_url
 _connect_args = {}
 if "ssl_mode=VERIFY_IDENTITY" in _url:
-    _url = _url.replace("?ssl_mode=VERIFY_IDENTITY", "").replace("&ssl_mode=VERIFY_IDENTITY", "")
+    parsed = urlparse(_url)
+    params = parse_qs(parsed.query, keep_blank_values=True)
+    params.pop("ssl_mode", None)
+    new_query = urlencode({k: v[0] for k, v in params.items()})
+    _url = urlunparse(parsed._replace(query=new_query))
     _connect_args = {"ssl_verify_cert": True, "ssl_verify_identity": True}
 
 # SQLite (used in tests) does not support pool_size/max_overflow
@@ -31,5 +37,8 @@ def get_db():
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()

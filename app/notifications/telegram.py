@@ -53,10 +53,6 @@ def format_signal_message(ticker: str, signals: list[SignalResult], summary: str
             target_str = f" | 目标价: ${signal.target_price:.2f}" if signal.target_price else ""
             lines.append(f"• {signal.indicator}{target_str} | 置信度: {signal.confidence}%")
 
-    # Add target price info if available from strongest signal
-    if strongest.target_price and strongest.signal_level != "WATCH":
-        lines.append(f"• 目标价: ${strongest.target_price:.2f}")
-
     lines.extend([
         "",
         "💡 *LLM 分析*",
