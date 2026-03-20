@@ -8,8 +8,6 @@ apscheduler
 yfinance
 pandas-ta
 openai
-python-telegram-bot
 httpx
 pytest
 pytest-asyncio
-httpx
