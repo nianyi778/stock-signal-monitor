@@ -1,0 +1,15 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+pymysql
+cryptography
+pydantic-settings
+apscheduler
+yfinance
+pandas-ta
+openai
+python-telegram-bot
+httpx
+pytest
+pytest-asyncio
+httpx
