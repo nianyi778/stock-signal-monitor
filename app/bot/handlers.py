@@ -72,8 +72,8 @@ def _extract_ticker(text: str) -> str | None:
     # 直接是大写代码（原始输入必须是全大写，排除 "apple" 这类英文单词）
     if re.fullmatch(r"[A-Z]{1,5}", text):
         return text
-    # 文本中包含大写字母序列
-    match = re.search(r"\b([A-Z]{1,5})\b", text.upper())
+    # 文本中包含大写字母序列（不做 upper，避免 "apple" 误匹配）
+    match = re.search(r"([A-Z]{1,5})", text)
     if match:
         return match.group(1)
     return None

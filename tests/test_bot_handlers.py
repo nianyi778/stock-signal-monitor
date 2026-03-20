@@ -19,21 +19,16 @@ class TestExtractTicker:
         assert _extract_ticker("TSLA") == "TSLA"
 
     def test_extract_ticker_lowercase_rejected(self):
-        """Lowercase 'apple' is NOT recognized as a Chinese-mapped ticker
-        and does not match the strict fullmatch uppercase rule.
-        The regex search converts to uppercase, so 'apple' → 'APPLE'."""
-        # Actual code behavior: text.upper() converts 'apple' → 'APPLE'
-        # and the regex finds it. This matches the code's current implementation.
-        result = _extract_ticker("apple")
-        assert result == "APPLE"
+        """Lowercase 'apple' is rejected — only uppercase codes are valid."""
+        assert _extract_ticker("apple") is None
 
     def test_extract_ticker_mixed_text(self):
-        """Text mixing Chinese and an uppercase ticker code separated by a space.
-        The regex \\b([A-Z]{1,5})\\b requires word boundaries around the ticker.
-        Using a space separator ensures \\b matches correctly.
-        """
-        result = _extract_ticker("帮我加一下 MSFT")
-        assert result == "MSFT"
+        """Chinese text with embedded uppercase ticker code."""
+        assert _extract_ticker("帮我加一下MSFT") == "MSFT"
+
+    def test_extract_ticker_mixed_text_with_space(self):
+        """Chinese text with space-separated uppercase ticker."""
+        assert _extract_ticker("帮我加一下 MSFT") == "MSFT"
 
     def test_extract_ticker_no_match(self):
         """Pure Chinese text with no ticker → returns None."""
