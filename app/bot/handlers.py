@@ -310,6 +310,30 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         finally:
             db.close()
 
+    elif data.startswith("analyze:"):
+        ticker = data.split(":", 1)[1]
+        if not re.fullmatch(r'[A-Z]{1,5}', ticker):
+            await query.edit_message_text("❌ 无效的股票代码")
+            return
+        await query.edit_message_text(f"⏳ 正在分析 {ticker}...")
+        from app.bot.analysis import get_stock_analysis
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, get_stock_analysis, ticker)
+        # Telegram message max 4096 chars
+        if len(result) > 4096:
+            result = result[:4090] + "\n..."
+        await query.message.reply_text(result, parse_mode="Markdown")
+
+
+@authorized_only
+async def btn_calendar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text("⏳ 正在获取经济日历...")
+    from app.bot.calendar import get_upcoming_events
+    result = await get_upcoming_events(days=14)
+    if len(result) > 4096:
+        result = result[:4090] + "\n..."
+    await update.message.reply_text(result, parse_mode="Markdown", reply_markup=MAIN_KEYBOARD)
+
 
 def build_handlers() -> list:
     conv = ConversationHandler(
@@ -322,6 +346,7 @@ def build_handlers() -> list:
         MessageHandler(filters.Regex("^📡 立即扫描$"), btn_scan),
         MessageHandler(filters.Regex("^📋 查看信号$"), btn_signals),
         MessageHandler(filters.Regex("^📈 我的自选$"), btn_watchlist),
+        MessageHandler(filters.Regex("^📅 大事日历$"), btn_calendar),
         CallbackQueryHandler(callback_handler),
         conv,
     ]

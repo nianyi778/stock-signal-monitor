@@ -56,7 +56,7 @@ async def summarize_signals(
 
     try:
         response = await _get_client().chat.completions.create(
-            model="gpt-4o-mini",
+            model=settings.llm_model_signal,
             messages=[
                 {"role": "user", "content": prompt}
             ],
