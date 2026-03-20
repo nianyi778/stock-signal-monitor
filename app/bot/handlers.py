@@ -111,22 +111,72 @@ async def btn_scan(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             if not signals:
                 await update.message.reply_text("✅ 扫描完成，未检测到信号。", reply_markup=MAIN_KEYBOARD)
                 return
-            lines = ["✅ *扫描完成*\n"]
+
+            # Group by ticker for cleaner output
+            from collections import defaultdict
+            ticker_signals: dict = defaultdict(list)
             for s in signals:
-                emoji = {"STRONG": "🔴", "WEAK": "🟡", "WATCH": "⚪"}.get(s.signal_level, "⚪")
-                direction = "🟢" if s.signal_type == "BUY" else "🔴" if s.signal_type == "SELL" else "🟡"
-                pushed_tag = " ✈️已推送" if s.pushed else ""
+                ticker_signals[s.ticker].append(s)
+
+            # Sort tickers: STRONG first, then by max confidence
+            def ticker_priority(ticker):
+                sigs = ticker_signals[ticker]
+                has_strong = any(s.signal_level == "STRONG" for s in sigs)
+                max_conf = max(s.confidence for s in sigs)
+                return (0 if has_strong else 1, -max_conf)
+
+            sorted_tickers = sorted(ticker_signals.keys(), key=ticker_priority)
+
+            lines = ["✅ *扫描完成*\n"]
+            for ticker in sorted_tickers:
+                tsigs = ticker_signals[ticker]
+                # Use the most significant signal for header
+                top = sorted(tsigs, key=lambda s: ({"STRONG": 0, "WEAK": 1, "WATCH": 2}[s.signal_level], -s.confidence))[0]
+                level_emoji = {"STRONG": "🔴", "WEAK": "🟡", "WATCH": "⚪"}.get(top.signal_level, "⚪")
+                dir_emoji = "🟢" if top.signal_type == "BUY" else "🔴" if top.signal_type == "SELL" else "🟡"
+                pushed_tag = " ✈️已推送" if any(s.pushed for s in tsigs) else ""
+
+                # Price context
+                price_str = f"${top.price:.2f}" if top.price else ""
+                target_str = ""
+                if top.target_price and top.price:
+                    pct = (top.target_price - top.price) / top.price * 100
+                    arrow = "▲" if pct > 0 else "▼"
+                    target_str = f" → 目标 ${top.target_price:.2f} ({arrow}{abs(pct):.1f}%)"
+
+                # All indicators triggered
+                indicators_str = " + ".join(dict.fromkeys(s.indicator for s in tsigs))
+
                 lines.append(
-                    f"{direction} *{s.ticker}* [{s.signal_level}] {s.signal_type}\n"
-                    f"  {s.indicator} | 置信度 {s.confidence}%{pushed_tag}\n"
-                    f"  _{s.message}_"
+                    f"{level_emoji}{dir_emoji} *{ticker}* {top.signal_level} {top.signal_type}{pushed_tag}\n"
+                    f"  💰 {price_str}{target_str}\n"
+                    f"  📐 指标: {indicators_str} | 置信度 {top.confidence}%\n"
+                    f"  _{top.message}_"
                 )
-            summary = f"\n📊 共 {len(signals)} 条信号"
+
+                # WEAK hint: what would make it STRONG
+                if top.signal_level == "WEAK":
+                    triggered = {s.indicator for s in tsigs}
+                    candidates = {"MACD", "RSI", "MA_CROSS"} - triggered
+                    if candidates:
+                        confirm_str = " / ".join(sorted(candidates))
+                        lines.append(f"  💡 _待 {confirm_str} 确认可升级 STRONG_")
+
             strong_count = sum(1 for s in signals if s.signal_level == "STRONG")
+            weak_count = sum(1 for s in signals if s.signal_level == "WEAK")
+            watch_count = sum(1 for s in signals if s.signal_level == "WATCH")
+            parts = []
             if strong_count:
-                summary += f"（{strong_count} 条强信号已推送）"
+                parts.append(f"🔴 {strong_count} 强")
+            if weak_count:
+                parts.append(f"🟡 {weak_count} 弱")
+            if watch_count:
+                parts.append(f"⚪ {watch_count} 观察")
+            summary = f"\n📊 共 {len(signals)} 条 | " + " · ".join(parts)
+            if strong_count:
+                summary += " | 强信号已推送 ✈️"
             else:
-                summary += "（无强信号，未推送）"
+                summary += " | 无强信号，未推送"
             lines.append(summary)
             await update.message.reply_text("\n".join(lines), parse_mode="Markdown", reply_markup=MAIN_KEYBOARD)
         finally:
