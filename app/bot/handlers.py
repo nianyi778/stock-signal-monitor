@@ -69,10 +69,10 @@ def _extract_ticker(text: str) -> str | None:
     for cn, ticker in CN_TICKER_MAP.items():
         if cn in text:
             return ticker
-    # 直接是大写代码（原始输入必须是全大写，排除 "apple" 这类英文单词）
-    if re.fullmatch(r"[A-Z]{1,5}", text):
-        return text
-    # 文本中包含大写字母序列（不做 upper，避免 "apple" 误匹配）
+    # 纯字母 1-5 位 → 当作 ticker（大小写都接受，统一转大写）
+    if re.fullmatch(r"[A-Za-z]{1,5}", text):
+        return text.upper()
+    # 文本中包含大写字母序列
     match = re.search(r"([A-Z]{1,5})", text)
     if match:
         return match.group(1)

@@ -18,9 +18,13 @@ class TestExtractTicker:
         """Bare uppercase ticker 'TSLA' is returned as-is."""
         assert _extract_ticker("TSLA") == "TSLA"
 
-    def test_extract_ticker_lowercase_rejected(self):
-        """Lowercase 'apple' is rejected — only uppercase codes are valid."""
-        assert _extract_ticker("apple") is None
+    def test_extract_ticker_lowercase_accepted(self):
+        """Lowercase 'crcl' is treated as ticker → 'CRCL'."""
+        assert _extract_ticker("crcl") == "CRCL"
+
+    def test_extract_ticker_lowercase_apple(self):
+        """Lowercase 'apple' is treated as ticker → 'APPLE'. Confirm step catches invalid ones."""
+        assert _extract_ticker("apple") == "APPLE"
 
     def test_extract_ticker_mixed_text(self):
         """Chinese text with embedded uppercase ticker code."""
