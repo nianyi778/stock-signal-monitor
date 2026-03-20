@@ -9,5 +9,6 @@ yfinance
 pandas-ta
 openai
 httpx
+python-telegram-bot[job-queue]
 pytest
 pytest-asyncio
