@@ -62,6 +62,113 @@ def _sync_official_events(db) -> int:
     return count
 
 
+def _fmt_econ_value(val, unit: str) -> str:
+    """Format economic indicator value with its unit."""
+    if val is None:
+        return "—"
+    unit = (unit or "").strip()
+    if unit == "%":
+        return f"{val:.2f}%"
+    if unit in ("K", "k"):
+        return f"{val:.0f}K"
+    if unit in ("B", "b") or (abs(val) > 1e8 and not unit):
+        return f"${val/1e9:.2f}B"
+    return f"{val:.2f}{(' ' + unit) if unit else ''}"
+
+
+# Keywords to match Finnhub event names → our event types
+_ECON_KEYWORDS: dict[str, list[str]] = {
+    "CPI":  ["consumer price index", "cpi"],
+    "NFP":  ["nonfarm payroll", "non farm payroll", "non-farm payroll"],
+    "PCE":  ["pce", "personal consumption expenditure", "personal spending"],
+    "FOMC": ["fed interest rate", "federal funds rate", "fomc rate", "interest rate decision"],
+    "GDP":  ["gross domestic product", "gdp"],
+}
+
+
+def _match_event_type(event_name: str) -> str | None:
+    name_lower = event_name.lower()
+    for etype, keywords in _ECON_KEYWORDS.items():
+        if any(k in name_lower for k in keywords):
+            return etype
+    return None
+
+
+def _sync_finnhub_macro(db) -> int:
+    """Fetch macro economic events from Finnhub and enrich stored events with forecast/prior."""
+    if not settings.finnhub_api_key:
+        return 0
+
+    today = date.today()
+    from_str = today.isoformat()
+    to_str = (today + timedelta(days=60)).isoformat()
+
+    try:
+        resp = httpx.get(
+            f"https://finnhub.io/api/v1/calendar/economic?from={from_str}&to={to_str}&token={settings.finnhub_api_key}",
+            timeout=10,
+        )
+        data = resp.json()
+    except Exception as e:
+        logger.warning(f"Finnhub economic calendar fetch error: {e}")
+        return 0
+
+    updated = 0
+    for item in data.get("economicCalendar", []):
+        if item.get("country", "").upper() != "US":
+            continue
+        etype = _match_event_type(item.get("event", ""))
+        if not etype:
+            continue
+
+        # Parse event datetime (Finnhub returns ISO string)
+        try:
+            raw_time = item.get("time", "")
+            if raw_time:
+                event_dt = datetime.fromisoformat(raw_time.replace("Z", "+00:00"))
+            else:
+                continue
+        except Exception:
+            continue
+
+        # Find matching stored event within ±1 day
+        window_start = event_dt - timedelta(days=1)
+        window_end = event_dt + timedelta(days=1)
+        stored = db.query(EconomicEvent).filter(
+            EconomicEvent.event_type == etype,
+            EconomicEvent.event_date >= window_start,
+            EconomicEvent.event_date <= window_end,
+            EconomicEvent.ticker.is_(None),
+        ).first()
+
+        if not stored:
+            continue
+
+        unit = item.get("unit", "")
+        estimate = item.get("estimate")
+        prev = item.get("prev")
+        actual = item.get("actual")
+
+        parts = []
+        if actual is not None:
+            parts.append(f"实际: {_fmt_econ_value(actual, unit)}")
+        if estimate is not None:
+            parts.append(f"预期: {_fmt_econ_value(estimate, unit)}")
+        if prev is not None:
+            parts.append(f"前值: {_fmt_econ_value(prev, unit)}")
+
+        if parts:
+            new_detail = " | ".join(parts)
+            if stored.detail != new_detail:
+                stored.detail = new_detail
+                stored.updated_at = datetime.now(UTC)
+                updated += 1
+
+    if updated:
+        db.commit()
+    return updated
+
+
 def _sync_finnhub_earnings(db) -> int:
     """Fetch watchlist earnings from Finnhub and upsert into DB."""
     if not settings.finnhub_api_key:
@@ -129,9 +236,14 @@ def refresh_calendar() -> dict:
     db = SessionLocal()
     try:
         official = _sync_official_events(db)
+        macro_enriched = _sync_finnhub_macro(db)
         earnings = _sync_finnhub_earnings(db)
-        logger.info(f"Calendar refreshed: {official} official + {earnings} earnings events")
-        return {"official": official, "earnings": earnings}
+        logger.info(
+            f"Calendar refreshed: {official} official added, "
+            f"{macro_enriched} macro enriched with forecast/prior, "
+            f"{earnings} earnings added"
+        )
+        return {"official": official, "macro_enriched": macro_enriched, "earnings": earnings}
     finally:
         db.close()
 
@@ -166,8 +278,9 @@ def get_upcoming_events_from_db(days: int = 14) -> str:
             else:
                 tag = f"{days_until}天后"
 
-            detail_str = f" | {e.detail}" if e.detail else ""
-            lines.append(f"{tag} | {event_date.strftime('%m/%d')} {weekday} | {e.title}{detail_str}")
+            lines.append(f"{tag} | {event_date.strftime('%m/%d')} {weekday} | {e.title}")
+            if e.detail:
+                lines.append(f"  _{e.detail}_")
 
         return "\n".join(lines)
     finally:
