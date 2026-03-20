@@ -7,7 +7,6 @@ MAIN_KEYBOARD = ReplyKeyboardMarkup(
         ["📈 我的自选", "➕ 添加股票"],
     ],
     resize_keyboard=True,
-    persistent=True,
 )
 
 def watchlist_inline(tickers: list[str]) -> InlineKeyboardMarkup:
