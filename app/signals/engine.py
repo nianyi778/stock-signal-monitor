@@ -3,8 +3,11 @@
 from dataclasses import dataclass
 from typing import Optional
 
+import pandas as pd
+import pandas_ta as ta
+
 from app.data.fetcher import fetch_ohlcv
-from app.signals.indicators import calc_bollinger, calc_ma_cross, calc_macd, calc_rsi
+from app.signals.indicators import calc_bollinger, calc_macd, calc_rsi
 
 
 @dataclass
@@ -102,16 +105,17 @@ def run_signals(ticker: str) -> list[SignalResult]:
             ))
 
     # --- MA Cross ---
-    import pandas_ta as ta
     fast_ma = ta.ema(close, length=20)
     slow_ma = ta.ema(close, length=50)
-    ma_cross = calc_ma_cross(close, fast=20, slow=50)
 
-    golden_cross = ma_cross["golden_cross"]
-    death_cross = ma_cross["death_cross"]
+    # Detect crosses inline (same logic as calc_ma_cross but reuses pre-computed MAs)
+    fast_above = (fast_ma > slow_ma).fillna(False)
+    prev_fast_above = fast_above.shift(1).fillna(False).astype(bool)
+    golden_cross = (fast_above & ~prev_fast_above).astype(bool)
+    death_cross = (~fast_above & prev_fast_above).astype(bool)
 
     if golden_cross.iloc[-1]:
-        slow_val = float(slow_ma.iloc[-1]) if slow_ma.iloc[-1] is not None and not __import__('math').isnan(float(slow_ma.iloc[-1])) else None
+        slow_val = float(slow_ma.iloc[-1]) if not pd.isna(slow_ma.iloc[-1]) else None
         fast_val = float(fast_ma.iloc[-1])
         fast_pct_diff = (fast_val - float(slow_ma.iloc[-1])) / float(slow_ma.iloc[-1]) if slow_val else 0.0
         base_confidence = min(95, int(abs(fast_pct_diff) * 100 * 10))
@@ -126,7 +130,7 @@ def run_signals(ticker: str) -> list[SignalResult]:
             message="Golden cross: 20 EMA crossed above 50 EMA (BUY)",
         ))
     elif death_cross.iloc[-1]:
-        slow_val = float(slow_ma.iloc[-1]) if slow_ma.iloc[-1] is not None and not __import__('math').isnan(float(slow_ma.iloc[-1])) else None
+        slow_val = float(slow_ma.iloc[-1]) if not pd.isna(slow_ma.iloc[-1]) else None
         fast_val = float(fast_ma.iloc[-1])
         fast_pct_diff = (fast_val - float(slow_ma.iloc[-1])) / float(slow_ma.iloc[-1]) if slow_val else 0.0
         base_confidence = min(95, int(abs(fast_pct_diff) * 100 * 10))

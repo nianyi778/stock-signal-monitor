@@ -34,6 +34,7 @@ def scan_all_stocks() -> None:
                     continue
 
                 # Save ALL signals to DB
+                new_db_signals = []
                 for sig in signals:
                     db_signal = Signal(
                         ticker=sig.ticker,
@@ -47,6 +48,9 @@ def scan_all_stocks() -> None:
                         pushed=False,
                     )
                     db.add(db_signal)
+                    new_db_signals.append(db_signal)
+                db.flush()  # get IDs before commit
+                new_signal_ids = [s.id for s in new_db_signals]
                 db.commit()
 
                 # Filter for push: STRONG + confidence >= threshold
@@ -82,13 +86,16 @@ def scan_all_stocks() -> None:
                 success = asyncio.run(send_telegram(message))
 
                 if success:
-                    # Mark as pushed
-                    db.query(Signal).filter(
-                        Signal.ticker == ticker,
-                        Signal.pushed == False,
-                        Signal.signal_level == "STRONG"
-                    ).update({"pushed": True})
-                    db.commit()
+                    # Mark only the newly inserted signals as pushed
+                    pushed_ids = [
+                        s.id for s in new_db_signals
+                        if s.signal_level == "STRONG" and s.confidence >= settings.push_min_confidence
+                    ]
+                    if pushed_ids:
+                        db.query(Signal).filter(
+                            Signal.id.in_(pushed_ids)
+                        ).update({"pushed": True}, synchronize_session=False)
+                        db.commit()
                     logger.info(f"Pushed signal for {ticker}")
                 else:
                     logger.warning(f"Failed to push Telegram message for {ticker}")

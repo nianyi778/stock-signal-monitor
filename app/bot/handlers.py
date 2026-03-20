@@ -1,4 +1,6 @@
 """Telegram bot command and message handlers."""
+import asyncio
+import functools
 import logging
 import re
 
@@ -18,10 +20,25 @@ from app.bot.keyboards import (
     signals_inline,
     watchlist_inline,
 )
+from app.config import settings
 from app.database import SessionLocal
 from app.models import Signal, WatchlistItem
 
 logger = logging.getLogger(__name__)
+
+
+def authorized_only(func):
+    """Decorator to restrict bot access to the configured chat ID."""
+    @functools.wraps(func)
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if str(update.effective_chat.id) != settings.telegram_chat_id:
+            if update.message:
+                await update.message.reply_text("⛔ 未授权")
+            elif update.callback_query:
+                await update.callback_query.answer("⛔ 未授权", show_alert=True)
+            return
+        return await func(update, context)
+    return wrapper
 
 # ConversationHandler state
 WAITING_TICKER = 1
@@ -62,6 +79,7 @@ def _extract_ticker(text: str) -> str | None:
     return None
 
 
+@authorized_only
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "👋 *炒股达人* 已就绪\n\n"
@@ -72,17 +90,20 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
+@authorized_only
 async def btn_scan(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("⏳ 扫描中，请稍候...")
     from app.scheduler import scan_all_stocks
+    loop = asyncio.get_event_loop()
     try:
-        scan_all_stocks()
+        await loop.run_in_executor(None, scan_all_stocks)
         await update.message.reply_text("✅ 扫描完成，有信号已推送。", reply_markup=MAIN_KEYBOARD)
     except Exception as e:
         logger.error(f"Scan error: {e}")
         await update.message.reply_text("❌ 扫描出错，请查看日志。", reply_markup=MAIN_KEYBOARD)
 
 
+@authorized_only
 async def btn_signals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     db = SessionLocal()
     try:
@@ -117,6 +138,7 @@ async def btn_signals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         db.close()
 
 
+@authorized_only
 async def btn_watchlist(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     db = SessionLocal()
     try:
@@ -136,6 +158,7 @@ async def btn_watchlist(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         db.close()
 
 
+@authorized_only
 async def btn_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text(
         "请输入股票名称或代码\n例如：苹果、英伟达、TSLA",
@@ -144,6 +167,7 @@ async def btn_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     return WAITING_TICKER
 
 
+@authorized_only
 async def receive_ticker(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = update.message.text.strip()
 
@@ -178,6 +202,7 @@ async def receive_ticker(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     return ConversationHandler.END
 
 
+@authorized_only
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
