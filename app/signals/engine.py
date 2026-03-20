@@ -112,7 +112,7 @@ def run_signals(ticker: str) -> list[SignalResult]:
 
     # Detect crosses inline (same logic as calc_ma_cross but reuses pre-computed MAs)
     fast_above = (fast_ma > slow_ma).fillna(False)
-    prev_fast_above = fast_above.shift(1).fillna(False).astype(bool)
+    prev_fast_above = fast_above.shift(1).infer_objects(copy=False).fillna(False).astype(bool)
     golden_cross = (fast_above & ~prev_fast_above).astype(bool)
     death_cross = (~fast_above & prev_fast_above).astype(bool)
 

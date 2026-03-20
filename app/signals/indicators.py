@@ -48,7 +48,7 @@ def calc_ma_cross(close: pd.Series, fast: int = 20, slow: int = 50) -> dict:
     slow_ma = ta.ema(close, length=slow)
 
     fast_above = (fast_ma > slow_ma).fillna(False)
-    prev_fast_above = fast_above.shift(1).fillna(False).astype(bool)
+    prev_fast_above = fast_above.shift(1).infer_objects(copy=False).fillna(False).astype(bool)
 
     golden_cross = (fast_above & ~prev_fast_above).astype(bool)
     death_cross = (~fast_above & prev_fast_above).astype(bool)
