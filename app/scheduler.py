@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import concurrent.futures
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy.orm import Session
@@ -11,6 +12,23 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 _scheduler = BackgroundScheduler()
+
+
+def _run_async(coro):
+    """Run a coroutine from a sync context (thread pool or scheduler thread).
+
+    APScheduler and run_in_executor both run in threads without an active event loop.
+    asyncio.run() creates a fresh loop, which is safe here.
+    FastAPI BackgroundTasks can run in the event loop thread — detect that case.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+        # We're inside the event loop thread — schedule the coroutine safely
+        future = asyncio.run_coroutine_threadsafe(coro, loop)
+        return future.result(timeout=60)
+    except RuntimeError:
+        # No running loop in this thread — safe to use asyncio.run()
+        return asyncio.run(coro)
 
 
 def scan_all_stocks() -> None:
@@ -81,9 +99,9 @@ def scan_all_stocks() -> None:
                 from app.llm.summarizer import summarize_signals
                 from app.notifications.telegram import format_signal_message, send_telegram
 
-                summary = asyncio.run(summarize_signals(ticker, push_signals, price_context))
+                summary = _run_async(summarize_signals(ticker, push_signals, price_context))
                 message = format_signal_message(ticker, push_signals, summary)
-                success = asyncio.run(send_telegram(message))
+                success = _run_async(send_telegram(message))
 
                 if success:
                     # Mark only the newly inserted signals as pushed

@@ -31,7 +31,7 @@ def authorized_only(func):
     """Decorator to restrict bot access to the configured chat ID."""
     @functools.wraps(func)
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if str(update.effective_chat.id) != settings.telegram_chat_id:
+        if update.effective_chat is None or str(update.effective_chat.id) != settings.telegram_chat_id:
             if update.message:
                 await update.message.reply_text("⛔ 未授权")
             elif update.callback_query:
@@ -94,14 +94,14 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def btn_scan(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("⏳ 扫描中，请稍候...")
     from app.scheduler import scan_all_stocks
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         await loop.run_in_executor(None, scan_all_stocks)
         # 查 DB 回显本次扫描结果
         db = SessionLocal()
         try:
-            from datetime import datetime, timedelta, UTC
-            recent = datetime.now(UTC) - timedelta(minutes=5)
+            from datetime import datetime, timedelta
+            recent = datetime.utcnow() - timedelta(minutes=5)
             signals = (
                 db.query(Signal)
                 .filter(Signal.triggered_at >= recent)
@@ -317,7 +317,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             return
         await query.edit_message_text(f"⏳ 正在分析 {ticker}...")
         from app.bot.analysis import get_stock_analysis
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(None, get_stock_analysis, ticker)
         # Telegram message max 4096 chars
         if len(result) > 4096:

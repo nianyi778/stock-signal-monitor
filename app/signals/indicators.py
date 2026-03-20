@@ -13,8 +13,12 @@ def calc_macd(close: pd.Series) -> dict:
 
     Returns:
         dict with keys 'macd', 'signal', 'histogram' — each a pd.Series.
+        Returns all-NaN series if calculation fails.
     """
     result = ta.macd(close)
+    if result is None:
+        nan_series = pd.Series([float("nan")] * len(close))
+        return {"macd": nan_series, "signal": nan_series.copy(), "histogram": nan_series.copy()}
     # pandas_ta returns columns: MACD_12_26_9, MACDh_12_26_9, MACDs_12_26_9
     macd_col = [c for c in result.columns if c.startswith("MACD_")][0]
     hist_col = [c for c in result.columns if c.startswith("MACDh_")][0]
@@ -32,7 +36,10 @@ def calc_rsi(close: pd.Series, period: int = 14) -> pd.Series:
     Returns:
         pd.Series of RSI values (0–100, NaN for initial periods).
     """
-    return ta.rsi(close, length=period).reset_index(drop=True)
+    result = ta.rsi(close, length=period)
+    if result is None:
+        return pd.Series([float("nan")] * len(close))
+    return result.reset_index(drop=True)
 
 
 def calc_ma_cross(close: pd.Series, fast: int = 20, slow: int = 50) -> dict:
@@ -66,6 +73,9 @@ def calc_bollinger(close: pd.Series, period: int = 20, std: float = 2.0) -> dict
         dict with keys 'upper', 'mid', 'lower' — each a pd.Series.
     """
     result = ta.bbands(close, length=period, std=std)
+    if result is None:
+        nan_series = pd.Series([float("nan")] * len(close))
+        return {"upper": nan_series, "mid": nan_series.copy(), "lower": nan_series.copy()}
     # pandas_ta returns columns: BBL_*, BBM_*, BBU_*, BBB_*, BBP_*
     lower_col = [c for c in result.columns if c.startswith("BBL_")][0]
     mid_col = [c for c in result.columns if c.startswith("BBM_")][0]

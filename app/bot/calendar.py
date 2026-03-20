@@ -120,8 +120,7 @@ def _sync_finnhub_earnings(db) -> int:
                 ticker=sym,
             ))
             count += 1
-    if count:
-        db.commit()
+    db.commit()  # always commit — captures both inserts and detail updates
     return count
 
 

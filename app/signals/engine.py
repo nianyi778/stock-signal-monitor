@@ -82,7 +82,8 @@ def run_signals(ticker: str) -> list[SignalResult]:
     if len(rsi_valid) >= 1:
         curr_rsi = float(rsi_valid.iloc[-1])
         if curr_rsi < 30:
-            base_confidence = min(95, int(abs(curr_rsi - 50) * 2))
+            # Confidence based on distance below 30 threshold (RSI=0 → 95, RSI=29 → ~68)
+            base_confidence = min(95, int((30 - curr_rsi) / 30 * 95) + 50)
             raw_signals.append(SignalResult(
                 ticker=ticker,
                 signal_type="BUY",
@@ -94,7 +95,8 @@ def run_signals(ticker: str) -> list[SignalResult]:
                 message=f"RSI oversold ({curr_rsi:.1f} < 30)",
             ))
         elif curr_rsi > 70:
-            base_confidence = min(95, int(abs(curr_rsi - 50) * 2))
+            # Confidence based on distance above 70 threshold (RSI=100 → 95, RSI=71 → ~53)
+            base_confidence = min(95, int((curr_rsi - 70) / 30 * 95) + 50)
             raw_signals.append(SignalResult(
                 ticker=ticker,
                 signal_type="SELL",

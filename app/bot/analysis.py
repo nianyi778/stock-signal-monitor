@@ -31,6 +31,7 @@ def get_stock_analysis(ticker: str) -> str:
     ma200 = info.get("twoHundredDayAverage")
 
     # Bollinger bands from recent data
+    close = None
     try:
         import pandas_ta as ta
         hist = yf.download(ticker, period="3mo", progress=False)
@@ -96,6 +97,8 @@ def get_stock_analysis(ticker: str) -> str:
     # RSI
     try:
         import pandas_ta as ta
+        if close is None:
+            raise ValueError("close data unavailable")
         rsi_val = float(ta.rsi(close, length=14).iloc[-1])
         if rsi_val > 70:
             rsi_label = "超买 ⚠️"

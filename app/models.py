@@ -64,7 +64,7 @@ class EconomicEvent(Base):
     event_date: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
     event_type: Mapped[str] = mapped_column(String(32), nullable=False)  # "FOMC" / "CPI" / "NFP" / "EARNINGS" / "GDP" / "PCE"
     title: Mapped[str] = mapped_column(String(256), nullable=False)
-    detail: Mapped[str] = mapped_column(String(512), default="")
+    detail: Mapped[str] = mapped_column(String(512), default="", nullable=False, server_default="")
     impact: Mapped[str] = mapped_column(String(8), default="高")  # "高" / "中" / "低"
     source: Mapped[str] = mapped_column(String(32), default="")  # "fed" / "bls" / "finnhub"
     ticker: Mapped[str | None] = mapped_column(String(16), nullable=True)  # for earnings
