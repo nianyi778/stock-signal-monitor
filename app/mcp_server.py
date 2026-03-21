@@ -57,7 +57,11 @@ mcp = FastMCP(
         "You can manage a watchlist, trigger technical signal scans (MACD/RSI/MA/Bollinger), "
         "get full stock analysis with entry range / target / stop loss prices and risk:reward ratio, "
         "track a portfolio with buy entries and real-time P&L, monitor active trades for stop/target triggers, "
-        "and view the US economic event calendar with market forecasts."
+        "and view the US economic event calendar with market forecasts. "
+        "Signals pass through a 3-layer intelligence filter before pushing: "
+        "Finnhub news sentiment adjustment, Bull/Bear LLM debate (PUSH/DOWNGRADE/SUPPRESS), "
+        "and position-aware context (shows existing cost basis and P&L when you already hold the stock). "
+        "Individual stock 200-day MA trend filter prevents BUY signals in downtrends."
     ),
 )
 

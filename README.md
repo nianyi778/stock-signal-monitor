@@ -4,8 +4,8 @@
 
 ![Python](https://img.shields.io/badge/Python-3.12-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-latest-green)
-![Tests](https://img.shields.io/badge/Tests-90%20passed-brightgreen)
-![Version](https://img.shields.io/badge/version-1.5.3-orange)
+![Tests](https://img.shields.io/badge/Tests-107%20passed-brightgreen)
+![Version](https://img.shields.io/badge/version-1.5.4-orange)
 ![Docker](https://img.shields.io/badge/Docker-ghcr.io-blue)
 
 ---
@@ -27,7 +27,7 @@
 - MACD / RSI / 均线交叉（20/50 EMA）/ 布林带 四大指标
 - 共振检测：2+ 同向 → STRONG（推送），单指标 → WEAK，布林带 → WATCH
 - GPT-4o-mini 生成分析摘要，仅推置信度 ≥ 60 的强信号
-- **前置过滤**：SPY > 50日均线 且 VIX < 25（大盘多头）+ 成交量 ≥ 1.2× 均量
+- **前置过滤**：SPY > 50日均线 且 VIX < 25（大盘多头）+ 个股价格 > 200日均线 + 成交量 ≥ 1.2× 均量
 - **完整进/跑/割价格**：每条 STRONG 信号附带进场区间、目标价、止损价（ATR自适应）、风险回报比（R:R ≥ 1.5 才推送）
 
 ### 📱 Telegram Bot 交互
@@ -311,6 +311,7 @@ pytest tests/ -v
 | **v1.5.1** | ✅ 已发布 | 仓位占比自动回退（未设账户总额时按持仓市值计算）|
 | **v1.5.2** | ✅ 已发布 | 录入持仓自动加入自选股，卖出不影响自选 |
 | **v1.5.3** | ✅ 已发布 | 算法修正：ATR 吊灯止损 · 52周高点阻力 · 卖空方向大盘过滤 · 进场区收窄 · EMA20/50 正确命名 |
+| **v1.5.4** | ✅ 已发布 | 信号智能增强：多空辩论过滤 · Finnhub新闻情绪 · 持仓感知推送 · RSI事件检测 · 个股200d趋势过滤 · 布林带趋势感知 |
 | **v2.0** | 规划中 | 回测引擎 · Walk-Forward权重优化 · 自学习循环（月度自动调参）|
 | **v3.0** | 规划中 | 盘中实时监控 · React看板 · Finnhub WebSocket新闻流 |
 | **v4.0** | 远期 | 多用户 SaaS · 策略社区 · 付费订阅 |
