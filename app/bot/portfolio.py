@@ -4,6 +4,68 @@ from sqlalchemy.orm import Session
 from app.models import PositionEntry
 
 
+def _try_create_active_trade(db: Session, ticker: str, buy_price: float) -> None:
+    """Best-effort: create ActiveTrade for a manually entered position.
+    Uses current market data to calculate stop/target. Never blocks position recording."""
+    try:
+        from app.models import ActiveTrade
+        # Skip if already monitored
+        existing = db.query(ActiveTrade).filter_by(ticker=ticker, status="ACTIVE").first()
+        if existing:
+            return
+
+        from app.data.fetcher import fetch_ohlcv
+        from app.signals.engine import _calc_levels, _build_entry_exit
+        df = fetch_ohlcv(ticker)
+        if df is None or df.empty:
+            return
+
+        price = float(df["Close"].iloc[-1])
+        support, resistance, atr = _calc_levels(df, price)
+
+        if atr is None or atr <= 0:
+            atr = price * 0.02
+        stop = round(support - 1.5 * atr, 2)
+        warn = round(stop + 0.75 * atr, 2)
+
+        ent = _build_entry_exit(price, support, resistance, atr)
+        target = ent["target_price"] if ent else resistance
+        partial_tp = round(target * 0.95, 2) if target else None
+        rr = ent["rr_ratio"] if ent else None
+
+        # Fetch earnings date
+        earnings_dt = None
+        try:
+            import yfinance as yf
+            cal = yf.Ticker(ticker).calendar
+            if cal is not None:
+                dates = cal.get("Earnings Date", [])
+                if dates:
+                    d = dates[0]
+                    if hasattr(d, "year"):
+                        earnings_dt = datetime(d.year, d.month, d.day, tzinfo=UTC)
+        except Exception:
+            pass
+
+        trade = ActiveTrade(
+            ticker=ticker,
+            entry_low=buy_price,
+            entry_high=buy_price,
+            target_price=target,
+            stop_price=stop,
+            warn_price=warn,
+            partial_tp=partial_tp,
+            rr_ratio=rr,
+            atr_at_signal=atr,
+            earnings_date=earnings_dt,
+            status="ACTIVE",
+            valid_until=None,  # manual positions don't expire
+        )
+        db.add(trade)
+    except Exception:
+        pass  # never block position recording
+
+
 def add_position(db: Session, ticker: str, buy_price: float, shares: float, note: str = "") -> PositionEntry:
     ticker = ticker.upper()
     entry = PositionEntry(ticker=ticker, buy_price=buy_price, shares=shares, note=note)
@@ -11,11 +73,14 @@ def add_position(db: Session, ticker: str, buy_price: float, shares: float, note
 
     # Auto-add to watchlist if not already there
     from app.models import WatchlistItem
-    existing = db.query(WatchlistItem).filter_by(ticker=ticker).first()
-    if existing:
-        existing.is_active = True
+    wl = db.query(WatchlistItem).filter_by(ticker=ticker).first()
+    if wl:
+        wl.is_active = True
     else:
         db.add(WatchlistItem(ticker=ticker, name=ticker))
+
+    # Auto-create ActiveTrade for daily monitoring
+    _try_create_active_trade(db, ticker, buy_price)
 
     db.commit()
     db.refresh(entry)
