@@ -114,7 +114,9 @@ class TestGetCurrentPrice:
     def test_get_current_price_success_fast_info(self):
         """Test successful price fetch from fast_info."""
         mock_ticker = MagicMock()
-        mock_ticker.fast_info = {"lastPrice": 175.50}
+        mock_fast_info = MagicMock()
+        mock_fast_info.last_price = 175.50
+        mock_ticker.fast_info = mock_fast_info
 
         with patch("app.data.fetcher.yfinance.Ticker") as mock_ticker_class:
             mock_ticker_class.return_value = mock_ticker

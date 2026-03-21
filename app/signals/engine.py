@@ -37,10 +37,10 @@ def _get_regime() -> str:
     """Check SPY vs 50-day MA and VIX. Returns BULL/BEAR/NEUTRAL."""
     try:
         spy_info = yf.Ticker("SPY").fast_info
-        price = spy_info.get("lastPrice") or spy_info.get("last_price") or 0
-        ma50 = spy_info.get("fiftyDayAverage") or spy_info.get("fifty_day_average") or 0
+        price = getattr(spy_info, 'last_price', None) or 0
+        ma50 = getattr(spy_info, 'fifty_day_average', None) or 0
         vix_info = yf.Ticker("^VIX").fast_info
-        vix = vix_info.get("lastPrice") or vix_info.get("last_price") or 0
+        vix = getattr(vix_info, 'last_price', None) or 0
         if price > ma50 and vix < 25:
             return "BULL"
         elif vix >= 25:

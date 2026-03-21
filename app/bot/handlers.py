@@ -404,7 +404,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 loop = asyncio.get_running_loop()
                 price = await loop.run_in_executor(
                     None,
-                    lambda: float(yf.Ticker(ticker).fast_info.get("last_price", 0) or 0)
+                    lambda: float(getattr(yf.Ticker(ticker).fast_info, 'last_price', None) or 0)
                 )
             except Exception:
                 price = 0.0
@@ -479,7 +479,7 @@ async def btn_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 ticker_sym = r["ticker"]
                 price = await loop.run_in_executor(
                     None,
-                    lambda t=ticker_sym: float(yf.Ticker(t).fast_info.get("last_price") or 0)
+                    lambda t=ticker_sym: float(getattr(yf.Ticker(t).fast_info, 'last_price', None) or 0)
                 )
             except Exception:
                 price = 0.0

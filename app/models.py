@@ -84,7 +84,7 @@ class ActiveTrade(Base):
 
     entry_low: Mapped[float | None] = mapped_column(Float, nullable=True)
     entry_high: Mapped[float | None] = mapped_column(Float, nullable=True)
-    valid_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    valid_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     target_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     stop_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     warn_price: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -93,15 +93,15 @@ class ActiveTrade(Base):
     atr_at_signal: Mapped[float | None] = mapped_column(Float, nullable=True)
     volume_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
     regime_state: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    earnings_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    earnings_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # ACTIVE / STOPPED / TARGET_HIT / EXPIRED / CANCELLED
     status: Mapped[str] = mapped_column(String(16), default="ACTIVE", nullable=False)
 
     opened_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(UTC), nullable=False
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
-    closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class PositionEntry(Base):
@@ -116,7 +116,7 @@ class PositionEntry(Base):
     note: Mapped[str | None] = mapped_column(String(256), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     sell_price: Mapped[float | None] = mapped_column(Float, nullable=True)
-    sold_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    sold_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(UTC), nullable=False
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )

@@ -56,7 +56,7 @@ def get_current_price(ticker: str) -> Optional[float]:
 
         # Try fast_info first
         try:
-            price = ticker_obj.fast_info.get("lastPrice")
+            price = getattr(ticker_obj.fast_info, 'last_price', None)
             if price is not None:
                 return float(price)
         except (AttributeError, KeyError, TypeError):

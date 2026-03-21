@@ -141,6 +141,12 @@ def scan_all_stocks() -> None:
                         if s.signal_level == "STRONG" and s.confidence >= settings.push_min_confidence
                     ]
                     for sig, db_signal in zip(push_signals, pushed_db_signals):
+                        existing = db.query(ActiveTrade).filter(
+                            ActiveTrade.ticker == ticker,
+                            ActiveTrade.status == "ACTIVE",
+                        ).first()
+                        if existing:
+                            continue
                         if sig.stop_price:
                             trade = ActiveTrade(
                                 ticker=ticker,
@@ -197,7 +203,7 @@ def check_active_trades(db=None, price_override: dict | None = None):
                 price = price_override[ticker]
             else:
                 try:
-                    price = float(yf.Ticker(ticker).fast_info.get("last_price", 0) or 0)
+                    price = float(getattr(yf.Ticker(ticker).fast_info, 'last_price', None) or 0)
                 except Exception:
                     continue
             if price <= 0:
