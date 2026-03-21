@@ -7,7 +7,7 @@ import yfinance
 
 
 def fetch_ohlcv(
-    ticker: str, period: str = "3mo", interval: str = "1d"
+    ticker: str, period: str = "14mo", interval: str = "1d"
 ) -> Optional[pd.DataFrame]:
     """
     Fetch OHLCV (Open, High, Low, Close, Volume) data for a given ticker.

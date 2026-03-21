@@ -5,7 +5,7 @@
 ![Python](https://img.shields.io/badge/Python-3.12-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-latest-green)
 ![Tests](https://img.shields.io/badge/Tests-107%20passed-brightgreen)
-![Version](https://img.shields.io/badge/version-1.5.7-orange)
+![Version](https://img.shields.io/badge/version-1.5.8-orange)
 ![Docker](https://img.shields.io/badge/Docker-ghcr.io-blue)
 
 ---
@@ -315,6 +315,7 @@ pytest tests/ -v
 | **v1.5.5** | ✅ 已发布 | Telegram Markdown 容错推送：parse 失败自动降级纯文本重试，解决 LLM 生成内容含特殊字符导致推送失败 |
 | **v1.5.6** | ✅ 已发布 | 修复 Bot Handler 扫描/信号详情页 Markdown parse 错误：`s.message` 含 `_` 导致 "Can't parse entities" |
 | **v1.5.7** | ✅ 已发布 | Code review 修复：信号列表/自选股 name 转义·`apply_sentiment_to_confidence` 生效·DOWNGRADE 写回 DB·`price_context` support/resistance 修正·`]` 补充到转义集 |
+| **v1.5.8** | ✅ 已发布 | 金融算法审查修复：数据从 3mo 扩展到 14mo（MA200/week52high 从未生效）·MA_CROSS 置信度修复·MACD velocity 乘数校准·_get_regime 缓存·SELL 信号止损/目标方向修正 |
 | **v2.0** | 规划中 | 回测引擎 · Walk-Forward权重优化 · 自学习循环（月度自动调参）|
 | **v3.0** | 规划中 | 盘中实时监控 · React看板 · Finnhub WebSocket新闻流 |
 | **v4.0** | 远期 | 多用户 SaaS · 策略社区 · 付费订阅 |

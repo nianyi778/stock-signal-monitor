@@ -33,8 +33,17 @@ class SignalResult:
     atr: float | None = None
 
 
+_regime_cache: dict = {"value": "NEUTRAL", "ts": 0.0}
+
+
 def _get_regime() -> str:
-    """Check SPY vs 50-day MA and VIX. Returns BULL/BEAR/NEUTRAL."""
+    """Check SPY vs 50-day MA and VIX. Returns BULL/BEAR/NEUTRAL.
+
+    Cached for 1 hour so batch scans over many tickers only call yfinance once.
+    """
+    import time
+    if _regime_cache["ts"] and time.time() - _regime_cache["ts"] < 3600:
+        return _regime_cache["value"]
     try:
         spy_info = yf.Ticker("SPY").fast_info
         price = getattr(spy_info, 'last_price', None) or 0
@@ -42,12 +51,16 @@ def _get_regime() -> str:
         vix_info = yf.Ticker("^VIX").fast_info
         vix = getattr(vix_info, 'last_price', None) or 0
         if price > ma50 and vix < 25:
-            return "BULL"
+            result = "BULL"
         elif vix >= 25:
-            return "BEAR"
-        return "NEUTRAL"
+            result = "BEAR"
+        else:
+            result = "NEUTRAL"
     except Exception:
-        return "NEUTRAL"
+        result = "NEUTRAL"
+    _regime_cache["value"] = result
+    _regime_cache["ts"] = time.time()
+    return result
 
 
 def _get_avg_volume(df: pd.DataFrame) -> float:
@@ -78,7 +91,7 @@ def _calc_levels(df: pd.DataFrame, price: float):
     candidates_support = [v for v in [bb_lower, recent_low] if v and v < price]
     support = max(candidates_support) if candidates_support else None
 
-    week52_high = float(high.max())  # full dataset range as 52w proxy
+    week52_high = float(high.tail(252).max())  # ~1 trading year
     candidates_resist = [v for v in [bb_upper, recent_high, week52_high] if v and v > price]
     resistance = min(candidates_resist) if candidates_resist else None
 
@@ -167,7 +180,7 @@ def run_signals(ticker: str) -> list[SignalResult]:
             # Confidence based on histogram velocity (how fast it's moving away from zero),
             # not the absolute value on cross day (which is always near zero).
             velocity_pct = abs(curr_hist - prev_hist) / close.iloc[-1] * 100
-            velocity_bonus = min(25, int(velocity_pct * 600))
+            velocity_bonus = min(25, int(velocity_pct * 200))
             base_confidence = 55 + velocity_bonus  # range 55–80
             raw_signals.append(SignalResult(
                 ticker=ticker,
@@ -181,7 +194,7 @@ def run_signals(ticker: str) -> list[SignalResult]:
             ))
         elif prev_hist > 0 and curr_hist < 0:
             velocity_pct = abs(curr_hist - prev_hist) / close.iloc[-1] * 100
-            velocity_bonus = min(25, int(velocity_pct * 600))
+            velocity_bonus = min(25, int(velocity_pct * 200))
             base_confidence = 55 + velocity_bonus  # range 55–80
             raw_signals.append(SignalResult(
                 ticker=ticker,
@@ -274,8 +287,12 @@ def run_signals(ticker: str) -> list[SignalResult]:
     if golden_cross.iloc[-1]:
         slow_val = float(slow_ma.iloc[-1]) if not pd.isna(slow_ma.iloc[-1]) else None
         fast_val = float(fast_ma.iloc[-1])
-        fast_pct_diff = (fast_val - float(slow_ma.iloc[-1])) / float(slow_ma.iloc[-1]) if slow_val else 0.0
-        base_confidence = min(95, int(abs(fast_pct_diff) * 100 * 10))
+        prev_fast_val = float(fast_ma.iloc[-2]) if len(fast_ma) >= 2 and not pd.isna(fast_ma.iloc[-2]) else fast_val
+        # Use fast MA velocity (slope) as confidence proxy — not position diff at crossing day
+        # (fast ≈ slow at cross day → position diff ≈ 0 is always wrong)
+        slope_pct = abs(fast_val - prev_fast_val) / price * 100
+        velocity_bonus = min(20, int(slope_pct * 300))
+        base_confidence = 50 + velocity_bonus  # range 50–70
         raw_signals.append(SignalResult(
             ticker=ticker,
             signal_type="BUY",
@@ -289,8 +306,10 @@ def run_signals(ticker: str) -> list[SignalResult]:
     elif death_cross.iloc[-1]:
         slow_val = float(slow_ma.iloc[-1]) if not pd.isna(slow_ma.iloc[-1]) else None
         fast_val = float(fast_ma.iloc[-1])
-        fast_pct_diff = (fast_val - float(slow_ma.iloc[-1])) / float(slow_ma.iloc[-1]) if slow_val else 0.0
-        base_confidence = min(95, int(abs(fast_pct_diff) * 100 * 10))
+        prev_fast_val = float(fast_ma.iloc[-2]) if len(fast_ma) >= 2 and not pd.isna(fast_ma.iloc[-2]) else fast_val
+        slope_pct = abs(fast_val - prev_fast_val) / price * 100
+        velocity_bonus = min(20, int(slope_pct * 300))
+        base_confidence = 50 + velocity_bonus  # range 50–70
         raw_signals.append(SignalResult(
             ticker=ticker,
             signal_type="SELL",
@@ -378,26 +397,34 @@ def run_signals(ticker: str) -> list[SignalResult]:
                 ))
 
     if len(sell_signals) >= 2 and volume_ratio >= 1.2 and regime != "BULL" and stock_trend != "UP":
-        support, resistance, atr = _calc_levels(df, price)
-        ent = _build_entry_exit(price, support, resistance, atr)
+        _, _, atr = _calc_levels(df, price)
         indicator_str = "+".join(s.indicator for s in sell_signals)
         max_conf = max(s.confidence for s in sell_signals)
         confluence_conf = min(95, max_conf + 10 * len(sell_signals))
+        # For SELL signals: stop is ABOVE price (2×ATR), target is support (below price).
+        # _build_entry_exit is BUY-only (stop below, target above) — compute separately.
+        atr_val = atr if atr else price * 0.02
+        sell_stop = round(price + 2 * atr_val, 2)    # exit loss if price rallies
+        sell_warn = round(price + 1.0 * atr_val, 2)
+        # Target: 20-day low as nearest support proxy
+        recent_low = float(df["Low"].tail(20).min())
+        sell_target = round(recent_low, 2) if recent_low < price else None
+        sell_rr = round((price - sell_target) / (sell_stop - price), 2) if sell_target and sell_stop > price else None
         final_signals.append(SignalResult(
             ticker=ticker,
             signal_type="SELL",
             indicator=indicator_str,
             price=price,
-            target_price=ent["target_price"] if ent else None,
+            target_price=sell_target,
             confidence=confluence_conf,
             signal_level="STRONG",
             message=f"Strong SELL: {indicator_str} confluence",
-            entry_low=None,    # not applicable for SELL
-            entry_high=None,   # not applicable for SELL
-            stop_price=ent["stop_price"] if ent else None,
-            warn_price=ent["warn_price"] if ent else None,
-            partial_tp=ent["partial_tp"] if ent else None,
-            rr_ratio=ent["rr_ratio"] if ent else None,
+            entry_low=None,
+            entry_high=None,
+            stop_price=sell_stop if sell_rr and sell_rr >= 1.0 else None,
+            warn_price=sell_warn,
+            partial_tp=round((price + sell_target) / 2, 2) if sell_target else None,
+            rr_ratio=sell_rr,
             volume_ratio=volume_ratio,
             regime=regime,
             atr=atr,
