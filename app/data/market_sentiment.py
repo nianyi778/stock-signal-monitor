@@ -111,7 +111,7 @@ async def get_market_sentiment(tickers: list[str]) -> MarketSentiment:
         tickers: Watchlist tickers to aggregate Finnhub news sentiment.
     """
     now = time.time()
-    if _CACHE["ts"] and now - _CACHE["ts"] < _CACHE_TTL and _CACHE["sentiment"] is not None:
+    if _CACHE["ts"] > 0 and now - _CACHE["ts"] < _CACHE_TTL and _CACHE["sentiment"] is not None:
         return _CACHE["sentiment"]
 
     fg_score, fg_label, vix_slope, finnhub_pct = 50, "Neutral", 0.0, 0.5
