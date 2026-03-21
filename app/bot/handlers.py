@@ -215,7 +215,7 @@ async def btn_signals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             emoji = "🟢" if s.signal_type == "BUY" else "🔴"
             lines.append(
                 f"{emoji} *{s.ticker}* | {s.indicator} | 置信度 {s.confidence}%\n"
-                f"  _{s.triggered_at.strftime('%m-%d %H:%M')} · {s.message}_"
+                f"  _{s.triggered_at.strftime('%m-%d %H:%M')} · {_escape_md(s.message)}_"
             )
             if s.ticker not in tickers_seen:
                 tickers_seen.append(s.ticker)
@@ -242,7 +242,7 @@ async def btn_watchlist(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             return
         tickers = [i.ticker for i in items]
         names = {i.ticker: i.name or i.ticker for i in items}
-        lines = ["📈 *我的自选股*\n"] + [f"• {t}  _{names[t]}_" for t in tickers]
+        lines = ["📈 *我的自选股*\n"] + [f"• {t}  _{_escape_md(names[t])}_" for t in tickers]
         await update.message.reply_text(
             "\n".join(lines),
             parse_mode="Markdown",

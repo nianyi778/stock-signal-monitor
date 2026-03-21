@@ -13,7 +13,7 @@ def _escape_md(text: str) -> str:
     """
     if not text:
         return text
-    for ch in ("_", "*", "`", "["):
+    for ch in ("_", "*", "`", "[", "]"):
         text = text.replace(ch, f"\\{ch}")
     return text
 

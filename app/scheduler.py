@@ -92,8 +92,8 @@ def scan_all_stocks() -> None:
                 price_context = {
                     "current_price": sig0.price,
                     "5d_change_pct": 0.0,
-                    "support": getattr(sig0, "support", None),
-                    "resistance": getattr(sig0, "resistance", None),
+                    "support": sig0.stop_price,       # ATR stop = effective support floor
+                    "resistance": sig0.target_price,  # target = nearest resistance
                 }
                 if hist is not None and len(hist) >= 2:
                     start_price = float(hist["Close"].iloc[0])
@@ -101,13 +101,16 @@ def scan_all_stocks() -> None:
                     price_context["5d_change_pct"] = round((end_price - start_price) / start_price * 100, 2)
 
                 # ── Step 1: News sentiment ────────────────────────────────────────
-                from app.data.news import get_ticker_sentiment
+                from app.data.news import get_ticker_sentiment, apply_sentiment_to_confidence
                 sentiment = _run_async(get_ticker_sentiment(ticker))
                 if sentiment:
                     logger.info(
                         f"{ticker}: news sentiment bullish={sentiment['bullish_pct']:.0%} "
                         f"bearish={sentiment['bearish_pct']:.0%}"
                     )
+                    # Adjust push_signals confidence based on news sentiment
+                    for sig in push_signals:
+                        sig.confidence = apply_sentiment_to_confidence(sig.confidence, sentiment)
 
                 # ── Step 2: Bull/Bear debate (if enabled) ─────────────────────────
                 debate_result = None
@@ -115,11 +118,13 @@ def scan_all_stocks() -> None:
                     from app.llm.debate import debate_signal
                     debate_result = _run_async(debate_signal(ticker, push_signals, price_context, sentiment))
                     logger.info(f"{ticker}: debate → {debate_result.decision} — {debate_result.verdict}")
-                    if debate_result.decision == "SUPPRESS":
-                        logger.info(f"{ticker}: signal suppressed by debate")
-                        continue
-                    elif debate_result.decision == "DOWNGRADE":
-                        logger.info(f"{ticker}: signal downgraded by debate, not pushing")
+                    if debate_result.decision in ("SUPPRESS", "DOWNGRADE"):
+                        # Downgrade the DB records so they don't appear as un-pushed STRONG signals
+                        db.query(Signal).filter(
+                            Signal.id.in_(new_signal_ids)
+                        ).update({"signal_level": "WEAK"}, synchronize_session=False)
+                        db.commit()
+                        logger.info(f"{ticker}: signal {debate_result.decision.lower()}d by debate")
                         continue
 
                 # ── Step 3: Position-aware note ────────────────────────────────────
