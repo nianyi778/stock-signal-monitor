@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     scheduler_cron_hour: int = 17
     push_min_confidence: int = 60
     api_secret: str = ""
+    portfolio_value: float = 0.0
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

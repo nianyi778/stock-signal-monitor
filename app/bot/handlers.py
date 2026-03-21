@@ -19,6 +19,7 @@ from app.bot.keyboards import (
     confirm_add_inline,
     signals_inline,
     watchlist_inline,
+    portfolio_inline,
 )
 from app.config import settings
 from app.database import SessionLocal
@@ -255,7 +256,7 @@ async def receive_ticker(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     text = update.message.text.strip()
 
     # 忽略菜单按钮误触发
-    if text in ("📡 立即扫描", "📋 查看信号", "📈 我的自选", "➕ 添加股票"):
+    if text in ("📡 立即扫描", "📋 查看信号", "📈 我的自选", "➕ 添加股票", "💼 我的持仓", "📅 大事日历"):
         return ConversationHandler.END
 
     ticker = _extract_ticker(text)
@@ -360,6 +361,57 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         finally:
             db.close()
 
+    elif data == "pos_add":
+        await query.edit_message_text(
+            "请输入持仓信息，格式：\n`NVDA 882.5 20`\n（代码 买入均价 股数）",
+            parse_mode="Markdown"
+        )
+        context.user_data["waiting_position"] = True
+        return
+
+    elif data.startswith("pos_sell:"):
+        ticker = data.split(":", 1)[1]
+        if not re.fullmatch(r'[A-Z]{1,5}', ticker):
+            await query.edit_message_text("❌ 无效代码")
+            return
+        context.user_data["selling_ticker"] = ticker
+        await query.edit_message_text(
+            f"请输入 *{ticker}* 的卖出价格（例如：910.5）：",
+            parse_mode="Markdown"
+        )
+        context.user_data["waiting_sell_price"] = True
+        return
+
+    elif data.startswith("pos_detail:"):
+        ticker = data.split(":", 1)[1]
+        if not re.fullmatch(r'[A-Z]{1,5}', ticker):
+            await query.edit_message_text("❌ 无效代码")
+            return
+        import yfinance as yf
+        from app.bot.portfolio import get_positions_summary
+        db = SessionLocal()
+        try:
+            try:
+                price = float(yf.Ticker(ticker).fast_info.get("last_price") or 0)
+            except Exception:
+                price = 0.0
+            summary = get_positions_summary(db, ticker, price)
+            if summary["total_shares"] == 0:
+                await query.edit_message_text(f"📭 {ticker} 无持仓记录")
+                return
+            pnl_emoji = "🟢" if summary["current_pnl_pct"] >= 0 else "🔴"
+            msg = (
+                f"*{ticker}* 持仓详情\n\n"
+                f"  股数: {summary['total_shares']:.0f}股\n"
+                f"  均价: \\${summary['avg_price']:.2f}\n"
+                f"  现价: \\${price:.2f}\n"
+                f"  {pnl_emoji} 盈亏: {summary['current_pnl_pct']:+.1f}%"
+                f"（\\${summary['current_pnl_usd']:+,.0f}）"
+            )
+            await query.edit_message_text(msg, parse_mode="Markdown")
+        finally:
+            db.close()
+
     elif data.startswith("analyze:"):
         ticker = data.split(":", 1)[1]
         if not re.fullmatch(r'[A-Z]{1,5}', ticker):
@@ -388,6 +440,108 @@ async def btn_calendar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await update.message.reply_text(result, parse_mode="Markdown", reply_markup=MAIN_KEYBOARD)
 
 
+@authorized_only
+async def btn_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    import yfinance as yf
+    from app.bot.portfolio import get_all_positions_raw, get_positions_summary, format_portfolio_message
+    from app.config import settings
+    db = SessionLocal()
+    try:
+        raw = get_all_positions_raw(db)
+        if not raw:
+            await update.message.reply_text("📭 暂无持仓记录。\n点击下方录入持仓：",
+                                             reply_markup=portfolio_inline([]))
+            return
+        portfolio_value = float(getattr(settings, "portfolio_value", 0) or 0)
+        positions = []
+        for r in raw:
+            try:
+                price = float(yf.Ticker(r["ticker"]).fast_info.get("last_price") or 0)
+            except Exception:
+                price = 0.0
+            summary = get_positions_summary(db, r["ticker"], price)
+            if portfolio_value > 0 and price > 0:
+                summary["position_pct"] = price * summary["total_shares"] / portfolio_value * 100
+            positions.append(summary)
+        msg = format_portfolio_message(positions, portfolio_value)
+        tickers = [p["ticker"] for p in positions if p["total_shares"] > 0]
+        await update.message.reply_text(msg, parse_mode="Markdown",
+                                         reply_markup=portfolio_inline(tickers))
+    finally:
+        db.close()
+
+
+@authorized_only
+async def handle_portfolio_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle free-text position entry and sell price input."""
+    text = update.message.text.strip()
+
+    # Handle sell price input
+    if context.user_data.get("waiting_sell_price"):
+        context.user_data.pop("waiting_sell_price")
+        ticker = context.user_data.pop("selling_ticker", None)
+        if not ticker:
+            await update.message.reply_text("❌ 操作超时，请重试。", reply_markup=MAIN_KEYBOARD)
+            return
+        try:
+            sell_price = float(text)
+        except ValueError:
+            await update.message.reply_text("❌ 价格格式不正确，请输入数字（如：910.5）", reply_markup=MAIN_KEYBOARD)
+            return
+        from app.bot.portfolio import sell_position
+        db = SessionLocal()
+        try:
+            result = sell_position(db, ticker, sell_price)
+            if "error" in result:
+                await update.message.reply_text(f"❌ {result['error']}", reply_markup=MAIN_KEYBOARD)
+            else:
+                emoji = "🟢" if result["pnl_pct"] >= 0 else "🔴"
+                await update.message.reply_text(
+                    f"✅ *{ticker}* 卖出记录\n"
+                    f"  均价: \\${result['avg_price']:.2f} × {result['total_shares']:.0f}股\n"
+                    f"  卖出: \\${result['sell_price']:.2f}\n"
+                    f"  {emoji} 盈亏: {result['pnl_pct']:+.1f}%（\\${result['pnl_usd']:+,.0f}）",
+                    parse_mode="Markdown",
+                    reply_markup=MAIN_KEYBOARD,
+                )
+        finally:
+            db.close()
+        return
+
+    # Handle position entry: "NVDA 882.5 20"
+    if context.user_data.get("waiting_position"):
+        context.user_data.pop("waiting_position")
+        parts = text.upper().split()
+        if len(parts) != 3:
+            await update.message.reply_text(
+                "❌ 格式不正确，请输入：`NVDA 882.5 20`\n（代码 买入均价 股数）",
+                parse_mode="Markdown",
+                reply_markup=MAIN_KEYBOARD,
+            )
+            return
+        ticker_input = parts[0]
+        if not re.fullmatch(r'[A-Z]{1,5}', ticker_input):
+            await update.message.reply_text("❌ 无效股票代码", reply_markup=MAIN_KEYBOARD)
+            return
+        try:
+            buy_price = float(parts[1])
+            shares = float(parts[2])
+        except ValueError:
+            await update.message.reply_text("❌ 价格或数量格式错误", reply_markup=MAIN_KEYBOARD)
+            return
+        from app.bot.portfolio import add_position
+        db = SessionLocal()
+        try:
+            add_position(db, ticker_input, buy_price, shares)
+            await update.message.reply_text(
+                f"✅ 已录入 *{ticker_input}* {shares:.0f}股 @ \\${buy_price:.2f}",
+                parse_mode="Markdown",
+                reply_markup=MAIN_KEYBOARD,
+            )
+        finally:
+            db.close()
+
+
 def build_handlers() -> list:
     conv = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^➕ 添加股票$"), btn_add_start)],
@@ -400,6 +554,8 @@ def build_handlers() -> list:
         MessageHandler(filters.Regex("^📋 查看信号$"), btn_signals),
         MessageHandler(filters.Regex("^📈 我的自选$"), btn_watchlist),
         MessageHandler(filters.Regex("^📅 大事日历$"), btn_calendar),
+        MessageHandler(filters.Regex("^💼 我的持仓$"), btn_portfolio),
+        MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex("^[📡📋📈➕💼📅]"), handle_portfolio_input),
         CallbackQueryHandler(callback_handler),
         conv,
     ]
