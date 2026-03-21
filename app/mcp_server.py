@@ -55,7 +55,8 @@ mcp = FastMCP(
     instructions=(
         "Access a stock signal monitoring system. "
         "You can manage a watchlist, trigger technical signal scans (MACD/RSI/MA/Bollinger), "
-        "get full stock analysis with support/resistance levels and action recommendations, "
+        "get full stock analysis with entry range / target / stop loss prices and risk:reward ratio, "
+        "track a portfolio with buy entries and real-time P&L, monitor active trades for stop/target triggers, "
         "and view the US economic event calendar with market forecasts."
     ),
 )
@@ -311,6 +312,105 @@ def stock_monitor_refresh_calendar() -> str:
         )
     except Exception as e:
         return f"❌ Refresh failed: {e}"
+
+
+@mcp.tool
+def stock_monitor_get_active_trades(status: Optional[str] = None) -> str:
+    """
+    List active trade monitoring records created from STRONG signals.
+    Shows entry range, target, stop loss, warn level, R:R, and current status.
+
+    Args:
+        status: Filter by status — ACTIVE, STOPPED, TARGET_HIT, EXPIRED, CANCELLED.
+                Omit to show all ACTIVE trades.
+    """
+    from app.models import ActiveTrade
+    db = _db()
+    try:
+        filter_status = status.upper() if status else "ACTIVE"
+        trades = (
+            db.query(ActiveTrade)
+            .filter(ActiveTrade.status == filter_status)
+            .order_by(ActiveTrade.opened_at.desc())
+            .limit(50)
+            .all()
+        )
+        if not trades:
+            return f"No {filter_status} trades found."
+
+        lines = [f"📊 {len(trades)} {filter_status} trade(s):\n"]
+        for t in trades:
+            rr = f"  R:R {t.rr_ratio:.1f}" if t.rr_ratio else ""
+            entry = f"${t.entry_low:.2f}~${t.entry_high:.2f}" if t.entry_low and t.entry_high else "—"
+            lines.append(
+                f"{'🟢' if t.status == 'ACTIVE' else '⚪'} {t.ticker} | "
+                f"进场 {entry} | 目标 ${t.target_price:.2f} | 止损 ${t.stop_price:.2f}{rr}\n"
+                f"   状态: {t.status} | 有效至: {t.valid_until.strftime('%m-%d') if t.valid_until else '—'} | "
+                f"开仓: {t.opened_at.strftime('%m-%d %H:%M') if t.opened_at else '—'}"
+            )
+        return "\n".join(lines)
+    finally:
+        db.close()
+
+
+@mcp.tool
+def stock_monitor_add_position(ticker: str, buy_price: float, shares: float, note: str = "") -> str:
+    """
+    Record a stock buy entry for portfolio tracking.
+    Multiple entries per ticker are supported (different lots at different prices).
+    Weighted average cost basis is calculated automatically.
+
+    Args:
+        ticker: Stock ticker symbol, e.g. NVDA
+        buy_price: Purchase price per share, e.g. 882.5
+        shares: Number of shares purchased, e.g. 20
+        note: Optional note, e.g. "lot 2" or "averaging down"
+    """
+    import re
+    ticker = ticker.upper().strip()
+    if not re.fullmatch(r"[A-Z]{1,10}", ticker):
+        return f"❌ Invalid ticker: {ticker}"
+    if buy_price <= 0 or shares <= 0:
+        return "❌ buy_price and shares must be greater than zero."
+
+    from app.bot.portfolio import add_position
+    db = _db()
+    try:
+        entry = add_position(db, ticker, buy_price, shares, note)
+        return (
+            f"✅ Recorded: {ticker}  {shares:.0f} shares @ ${buy_price:.2f}\n"
+            f"   Entry ID: {entry.id}"
+        )
+    except Exception as e:
+        return f"❌ Failed to record position: {e}"
+    finally:
+        db.close()
+
+
+@mcp.tool
+def stock_monitor_get_positions() -> str:
+    """
+    Get all active portfolio positions with real-time P&L.
+    Shows weighted average cost, current price, unrealized gain/loss per position.
+    Requires PORTFOLIO_VALUE in .env for position sizing percentages.
+    """
+    from app.bot.portfolio import get_all_positions, format_portfolio_message
+    from app.config import settings
+    db = _db()
+    try:
+        positions = get_all_positions(db)
+        if not positions:
+            return "📭 No active positions recorded."
+        portfolio_value = float(getattr(settings, "portfolio_value", 0) or 0)
+        if portfolio_value > 0:
+            for p in positions:
+                curr = p.get("current_price") or 0
+                p["position_pct"] = curr * p["total_shares"] / portfolio_value * 100
+        return format_portfolio_message(positions, portfolio_value)
+    except Exception as e:
+        return f"❌ Failed to fetch positions: {e}"
+    finally:
+        db.close()
 
 
 # ── Health check (HTTP mode) ──────────────────────────────────────────────────

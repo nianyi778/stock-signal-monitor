@@ -4,7 +4,7 @@
 
 ![Python](https://img.shields.io/badge/Python-3.12-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-latest-green)
-![Tests](https://img.shields.io/badge/Tests-69%20passed-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-90%20passed-brightgreen)
 ![Version](https://img.shields.io/badge/version-1.5.0-orange)
 ![Docker](https://img.shields.io/badge/Docker-ghcr.io-blue)
 
@@ -27,6 +27,8 @@
 - MACD / RSI / 均线交叉（20/50 EMA）/ 布林带 四大指标
 - 共振检测：2+ 同向 → STRONG（推送），单指标 → WEAK，布林带 → WATCH
 - GPT-4o-mini 生成分析摘要，仅推置信度 ≥ 60 的强信号
+- **前置过滤**：SPY > 50日均线 且 VIX < 25（大盘多头）+ 成交量 ≥ 1.2× 均量
+- **完整进/跑/割价格**：每条 STRONG 信号附带进场区间、目标价、止损价（ATR自适应）、风险回报比（R:R ≥ 1.5 才推送）
 
 ### 📱 Telegram Bot 交互
 
@@ -39,6 +41,7 @@
 | 📈 我的自选 | 查看/删除自选股 |
 | ➕ 添加股票 | 对话式输入（支持中文名：苹果、英伟达等） |
 | 📅 大事日历 | 未来 14 天重大经济事件 |
+| 💼 我的持仓 | 录入持仓（代码 均价 股数）、查看实时盈亏、记录卖出 |
 
 ### 📊 个股深度分析
 
@@ -91,9 +94,28 @@
 
 每天两次从 Finnhub 更新预期值（forecast）和前值（prior）。数据公布后自动补实际值。
 
+### 📲 信号推送格式（v1.5.0）
+
+STRONG 信号推送包含完整进/跑/割信息：
+
+```
+🟢 *NVDA* — 做多  `MACD+RSI`
+置信度: 85%
+
+📥 *进场区间:*  $875.00 ~ $886.00  _（3日内有效）_
+🎯 *目标价:*     $950.00  R:R 2.1
+🛑 *止损价:*     $844.00
+💰 *分批止盈:*  $902.50  _（卖50%，止损移保本）_
+
+📦 成交量: 1.4× 均量 ✅
+🌍 大盘: BULL
+
+_多指标共振看涨，ATR自适应止损，R:R 2.1..._
+```
+
 ### 🤖 MCP Server（AI Agent 接入）
 
-8 个 MCP tools，可挂载到 Claude Desktop / Claude Code：
+11 个 MCP tools，可挂载到 Claude Desktop / Claude Code：
 
 | Tool | 功能 |
 |------|------|
@@ -105,6 +127,9 @@
 | `stock_monitor_analyze` | 完整个股分析 |
 | `stock_monitor_get_calendar` | 大事日历（含预期+前值）|
 | `stock_monitor_refresh_calendar` | 强制刷新 Finnhub 数据 |
+| `stock_monitor_get_active_trades` | 查看监控中的活跃持仓信号（止损/目标/状态）|
+| `stock_monitor_add_position` | 录入买入记录（代码 + 均价 + 股数）|
+| `stock_monitor_get_positions` | 查看持仓实时盈亏汇总 |
 
 ---
 
@@ -145,6 +170,7 @@ uvicorn app.main:app --reload
 | `FINNHUB_API_KEY` | — | — | Finnhub Key（财报日历 + 宏观预期值）|
 | `LLM_MODEL_SIGNAL` | — | `gpt-4o-mini` | 信号摘要模型 |
 | `LLM_MODEL_ANALYSIS` | — | `gpt-4.1` | 个股分析模型 |
+| `PORTFOLIO_VALUE` | — | `0` | 账户总额（用于仓位占比计算，0=禁用）|
 
 > 东京时区参考：`SCHEDULER_CRON_HOUR=17`（ET）≈ 次日早上 6:00–7:00 JST
 
@@ -272,15 +298,16 @@ app/
 
 ```bash
 pytest tests/ -v
-# 69 个单元测试，全部 mock，不依赖真实网络
+# 90 个单元测试，全部 mock，不依赖真实网络
 ```
 
 ---
 
 ## Roadmap
 
-| 版本 | 计划 |
-|------|------|
-| **V2** | 盘中实时监控 · Finnhub WebSocket 新闻流 · React 看板 · 信号准确率统计 |
-| **V3** | 仓位管理 · 交易日志 · 成本均价 · 盈亏追踪 |
-| **V4** | 历史回测 · 策略参数自动优化 · 多用户 SaaS |
+| 版本 | 状态 | 内容 |
+|------|------|------|
+| **v1.5.0** | ✅ 已发布 | 进/跑/割完整价格 · ATR自适应止损 · R:R过滤 · 持仓追踪 · 每日持仓监控 |
+| **v2.0** | 规划中 | 回测引擎 · Walk-Forward权重优化 · 自学习循环（月度自动调参）|
+| **v3.0** | 规划中 | 盘中实时监控 · React看板 · Finnhub WebSocket新闻流 |
+| **v4.0** | 远期 | 多用户 SaaS · 策略社区 · 付费订阅 |
