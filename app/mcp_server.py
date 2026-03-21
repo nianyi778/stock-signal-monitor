@@ -359,6 +359,7 @@ def stock_monitor_add_position(ticker: str, buy_price: float, shares: float, not
     Record a stock buy entry for portfolio tracking.
     Multiple entries per ticker are supported (different lots at different prices).
     Weighted average cost basis is calculated automatically.
+    The ticker is automatically added to the watchlist so it will be scanned for signals.
 
     Args:
         ticker: Stock ticker symbol, e.g. NVDA
