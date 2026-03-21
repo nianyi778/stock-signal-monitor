@@ -360,9 +360,19 @@ def refresh_calendar_job() -> None:
 
 
 def _daily_job():
-    """Wrapper that runs scan then position monitor check."""
+    """Wrapper that runs scan, position monitor, and signal outcome evaluation."""
     scan_all_stocks()
     check_active_trades()
+    db = SessionLocal()
+    try:
+        from app.learning.outcome_tracker import evaluate_signal_outcomes
+        count = evaluate_signal_outcomes(db)
+        if count:
+            logger.info(f"Evaluated {count} signal outcomes")
+    except Exception as e:
+        logger.error(f"Signal outcome evaluation error: {e}", exc_info=True)
+    finally:
+        db.close()
 
 
 def start_scheduler() -> None:

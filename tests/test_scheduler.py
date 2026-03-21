@@ -208,3 +208,23 @@ class TestScanAllStocks:
             assert len(saved) == 1
 
         session.close()
+
+
+def test_daily_job_calls_outcome_evaluation():
+    """_daily_job() invokes evaluate_signal_outcomes after check_active_trades."""
+    from unittest.mock import patch, MagicMock
+
+    mock_db = MagicMock()
+
+    # SessionLocal() returns mock_db (direct call, not context manager)
+    with patch("app.scheduler.scan_all_stocks") as mock_scan, \
+         patch("app.scheduler.check_active_trades") as mock_check, \
+         patch("app.scheduler.SessionLocal", return_value=mock_db), \
+         patch("app.learning.outcome_tracker.evaluate_signal_outcomes", return_value=3) as mock_eval:
+        import app.scheduler as sched_module
+        sched_module._daily_job()
+
+    mock_scan.assert_called_once()
+    mock_check.assert_called_once()
+    mock_eval.assert_called_once_with(mock_db)
+    mock_db.close.assert_called_once()
