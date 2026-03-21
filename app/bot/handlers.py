@@ -24,6 +24,7 @@ from app.bot.keyboards import (
 from app.config import settings
 from app.database import SessionLocal
 from app.models import Signal, WatchlistItem
+from app.notifications.telegram import _escape_md
 
 logger = logging.getLogger(__name__)
 
@@ -155,7 +156,7 @@ async def btn_scan(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     f"{level_emoji}{dir_emoji} *{ticker}* {top.signal_level} {top.signal_type}{pushed_tag}\n"
                     f"  💰 {price_str}{target_str}\n"
                     f"  📐 指标: {indicators_str} | 置信度 {top.confidence}%\n"
-                    f"  _{top.message}_"
+                    f"  _{_escape_md(top.message)}_"
                 )
 
                 # WEAK hint: what would make it STRONG
@@ -164,7 +165,7 @@ async def btn_scan(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     candidates = {"MACD", "RSI", "MA_CROSS"} - triggered
                     if candidates:
                         confirm_str = " / ".join(sorted(candidates))
-                        lines.append(f"  💡 _待 {confirm_str} 确认可升级 STRONG_")
+                        lines.append(f"  💡 _待 {_escape_md(confirm_str)} 确认可升级 STRONG_")
 
             strong_count = sum(1 for s in signals if s.signal_level == "STRONG")
             weak_count = sum(1 for s in signals if s.signal_level == "WEAK")
@@ -364,7 +365,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 emoji = "🟢" if s.signal_type == "BUY" else ("🔴" if s.signal_type == "SELL" else "🟡")
                 lines.append(
                     f"{emoji} {s.signal_level} {s.signal_type} | {s.indicator} | {s.confidence}%\n"
-                    f"  _{s.triggered_at.strftime('%m-%d %H:%M')} · {s.message}_"
+                    f"  _{s.triggered_at.strftime('%m-%d %H:%M')} · {_escape_md(s.message)}_"
                 )
             await query.edit_message_text("\n".join(lines), parse_mode="Markdown")
         finally:
