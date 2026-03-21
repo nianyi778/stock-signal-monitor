@@ -5,7 +5,7 @@
 ![Python](https://img.shields.io/badge/Python-3.12-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-latest-green)
 ![Tests](https://img.shields.io/badge/Tests-69%20passed-brightgreen)
-![Version](https://img.shields.io/badge/version-1.3.9-orange)
+![Version](https://img.shields.io/badge/version-1.5.0-orange)
 ![Docker](https://img.shields.io/badge/Docker-ghcr.io-blue)
 
 ---
