@@ -313,7 +313,7 @@ def run_signals(ticker: str) -> list[SignalResult]:
                     atr=atr,
                 ))
 
-    if len(sell_signals) >= 2:
+    if len(sell_signals) >= 2 and volume_ratio >= 1.2:
         support, resistance, atr = _calc_levels(df, price)
         ent = _build_entry_exit(price, support, resistance, atr)
         indicator_str = "+".join(s.indicator for s in sell_signals)
@@ -328,8 +328,11 @@ def run_signals(ticker: str) -> list[SignalResult]:
             confidence=confluence_conf,
             signal_level="STRONG",
             message=f"Strong SELL: {indicator_str} confluence",
+            entry_low=ent["entry_low"] if ent else None,
+            entry_high=ent["entry_high"] if ent else None,
             stop_price=ent["stop_price"] if ent else None,
             warn_price=ent["warn_price"] if ent else None,
+            partial_tp=ent["partial_tp"] if ent else None,
             rr_ratio=ent["rr_ratio"] if ent else None,
             volume_ratio=volume_ratio,
             regime=regime,
