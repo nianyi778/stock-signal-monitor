@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from typing import Optional
 
 import yfinance as yf
@@ -31,7 +32,7 @@ def _get_target_et_date(triggered_at_utc: datetime, trading_days: int = 5) -> da
     triggered_at_utc must be UTC-aware (or naive UTC).
     """
     # Convert UTC → ET
-    et_tz = timezone(timedelta(hours=-5))   # ET standard; close enough for daily resolution
+    et_tz = ZoneInfo("America/New_York")
     triggered_et = triggered_at_utc.astimezone(et_tz)
     start_date = triggered_et.date()
 
@@ -81,7 +82,7 @@ def evaluate_signal_outcomes(db: Session) -> int:
     """
     from app.models import Signal, SignalOutcome
 
-    today_et = datetime.now(timezone(timedelta(hours=-5))).date()
+    today_et = datetime.now(ZoneInfo("America/New_York")).date()
     written = 0
 
     # All pushed STRONG signals that might need evaluation
@@ -109,7 +110,7 @@ def evaluate_signal_outcomes(db: Session) -> int:
             continue
 
         # Fetch 5-day OHLCV window (start = day after signal date, end = day after target)
-        et_tz = timezone(timedelta(hours=-5))
+        et_tz = ZoneInfo("America/New_York")
         signal_et_date = triggered.astimezone(et_tz).date()
         start_str = (signal_et_date + timedelta(days=1)).strftime("%Y-%m-%d")
         end_str   = (target_date + timedelta(days=1)).strftime("%Y-%m-%d")
@@ -150,8 +151,9 @@ def evaluate_signal_outcomes(db: Session) -> int:
             evaluated_at  = datetime.now(UTC),
         )
         db.add(outcome)
-        db.commit()
         written += 1
         logger.info(f"Evaluated {sig.ticker} signal #{sig.id}: {result} ({outcome_pct:+.2f}%)")
 
+    if written:
+        db.commit()
     return written
