@@ -49,10 +49,10 @@ def format_signal_message(ticker: str, signals: list[SignalResult], summary: str
         "",
     ]
 
-    if sig.entry_low and sig.entry_high:
+    if sig.entry_low is not None and sig.entry_high is not None:
         lines.append(f"📥 *进场区间:*  ${sig.entry_low:.2f} ~ ${sig.entry_high:.2f}  _（3日内有效）_")
     if sig.target_price:
-        rr_str = f"  R:R {sig.rr_ratio:.1f}" if sig.rr_ratio else ""
+        rr_str = f"  R:R {sig.rr_ratio:.1f}" if sig.rr_ratio is not None else ""
         lines.append(f"🎯 *目标价:*     ${sig.target_price:.2f}{rr_str}")
     if sig.stop_price:
         lines.append(f"🛑 *止损价:*     ${sig.stop_price:.2f}")
