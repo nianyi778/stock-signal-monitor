@@ -10,6 +10,6 @@ pandas-ta
 openai
 httpx
 python-telegram-bot[job-queue]
-mcp
+fastmcp
 pytest
 pytest-asyncio

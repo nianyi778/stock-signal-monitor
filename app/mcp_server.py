@@ -1,11 +1,14 @@
 """
-Stock Signal Monitor — MCP Server
+Stock Signal Monitor — MCP Server (fastmcp)
 
-Exposes stock monitoring capabilities as MCP tools for Claude/AI agents.
-Transport: stdio (Claude Desktop / Claude Code compatible)
+Exposes stock monitoring capabilities as MCP tools.
+Supports two transport modes:
+  - stdio: for Claude Desktop / Claude Code (local)
+  - http:  for remote/Docker deployment (port 8001)
 
 Usage:
-    python -m app.mcp_server
+    python -m app.mcp_server            # stdio (default)
+    python -m app.mcp_server --http     # HTTP on port 8001
 
 Claude Desktop config (~/.claude/claude_desktop_config.json):
     {
@@ -14,23 +17,48 @@ Claude Desktop config (~/.claude/claude_desktop_config.json):
           "command": "python",
           "args": ["-m", "app.mcp_server"],
           "cwd": "/path/to/stock-signal-monitor",
-          "env": { "DATABASE_URL": "...", "TELEGRAM_BOT_TOKEN": "..." }
+          "env": {
+            "DATABASE_URL": "...",
+            "TELEGRAM_BOT_TOKEN": "...",
+            "TELEGRAM_CHAT_ID": "...",
+            "OPENAI_API_KEY": "...",
+            "FINNHUB_API_KEY": "..."
+          }
+        }
+      }
+    }
+
+Remote (HTTP) — Claude Code settings.json:
+    {
+      "mcpServers": {
+        "stock_monitor": {
+          "type": "http",
+          "url": "http://your-server:8001/mcp"
         }
       }
     }
 """
 
 import logging
+import sys
 from datetime import UTC, datetime, timedelta
 from typing import Optional
 
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
-mcp = FastMCP("stock_monitor_mcp")
+mcp = FastMCP(
+    name="Stock Signal Monitor",
+    instructions=(
+        "Access a stock signal monitoring system. "
+        "You can manage a watchlist, trigger technical signal scans (MACD/RSI/MA/Bollinger), "
+        "get full stock analysis with support/resistance levels and action recommendations, "
+        "and view the US economic event calendar with market forecasts."
+    ),
+)
 
 
 # ── Input models ─────────────────────────────────────────────────────────────
@@ -40,18 +68,18 @@ class TickerInput(BaseModel):
 
 
 class SignalsInput(BaseModel):
-    ticker: Optional[str] = Field(None, description="Filter by ticker symbol. Omit for all tickers.")
-    level: Optional[str] = Field(None, description="Filter by signal level: STRONG, WEAK, or WATCH")
-    limit: int = Field(20, description="Max number of signals to return", ge=1, le=100)
+    ticker: Optional[str] = Field(None, description="Filter by ticker. Omit for all.")
+    level: Optional[str] = Field(None, description="STRONG, WEAK, or WATCH")
+    limit: int = Field(20, ge=1, le=100)
 
 
 class CalendarInput(BaseModel):
-    days: int = Field(14, description="Number of days ahead to look", ge=1, le=90)
+    days: int = Field(14, description="Days ahead to look", ge=1, le=90)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _get_db():
+def _db():
     from app.database import SessionLocal
     return SessionLocal()
 
@@ -60,20 +88,17 @@ def _level_emoji(level: str) -> str:
     return {"STRONG": "🔴", "WEAK": "🟡", "WATCH": "⚪"}.get(level, "⚪")
 
 
-def _dir_emoji(signal_type: str) -> str:
-    return {"BUY": "🟢", "SELL": "🔴", "WATCH": "🟡"}.get(signal_type, "⚪")
+def _dir_emoji(t: str) -> str:
+    return {"BUY": "🟢", "SELL": "🔴", "WATCH": "🟡"}.get(t, "⚪")
 
 
 # ── Tools ─────────────────────────────────────────────────────────────────────
 
-@mcp.tool(name="stock_monitor_get_watchlist")
-async def get_watchlist() -> str:
-    """
-    List all active stocks in the watchlist being monitored for signals.
-    Returns ticker symbols and company names.
-    """
+@mcp.tool
+def stock_monitor_get_watchlist() -> str:
+    """List all active stocks in the watchlist being monitored for signals."""
     from app.models import WatchlistItem
-    db = _get_db()
+    db = _db()
     try:
         items = db.query(WatchlistItem).filter(WatchlistItem.is_active == True).all()  # noqa: E712
         if not items:
@@ -87,20 +112,22 @@ async def get_watchlist() -> str:
         db.close()
 
 
-@mcp.tool(name="stock_monitor_add_stock")
-async def add_stock(params: TickerInput) -> str:
+@mcp.tool
+def stock_monitor_add_stock(ticker: str) -> str:
     """
-    Add a stock ticker to the watchlist. The stock will be included in the next daily scan.
-    Fetches company name from yfinance automatically.
+    Add a stock ticker to the watchlist.
+    Automatically fetches company name. Will be included in the next scan.
+
+    Args:
+        ticker: Stock ticker symbol, e.g. AAPL
     """
     import re
-    ticker = params.ticker.upper().strip()
+    ticker = ticker.upper().strip()
     if not re.fullmatch(r"[A-Z]{1,10}", ticker):
-        return f"❌ Invalid ticker format: {ticker}"
+        return f"❌ Invalid ticker: {ticker}"
 
-    from app.database import SessionLocal
     from app.models import WatchlistItem
-    db = SessionLocal()
+    db = _db()
     try:
         existing = db.query(WatchlistItem).filter(WatchlistItem.ticker == ticker).first()
         if existing and existing.is_active:
@@ -123,14 +150,17 @@ async def add_stock(params: TickerInput) -> str:
         db.close()
 
 
-@mcp.tool(name="stock_monitor_remove_stock")
-async def remove_stock(params: TickerInput) -> str:
+@mcp.tool
+def stock_monitor_remove_stock(ticker: str) -> str:
     """
-    Remove a stock ticker from the watchlist (soft delete — keeps signal history).
+    Remove a stock ticker from the watchlist (soft delete, keeps signal history).
+
+    Args:
+        ticker: Stock ticker symbol to remove
     """
     from app.models import WatchlistItem
-    ticker = params.ticker.upper().strip()
-    db = _get_db()
+    ticker = ticker.upper().strip()
+    db = _db()
     try:
         item = db.query(WatchlistItem).filter(WatchlistItem.ticker == ticker).first()
         if not item or not item.is_active:
@@ -142,38 +172,42 @@ async def remove_stock(params: TickerInput) -> str:
         db.close()
 
 
-@mcp.tool(name="stock_monitor_get_signals")
-async def get_signals(params: SignalsInput) -> str:
+@mcp.tool
+def stock_monitor_get_signals(
+    ticker: Optional[str] = None,
+    level: Optional[str] = None,
+    limit: int = 20,
+) -> str:
     """
-    Retrieve recent trading signals from the database.
-    Signals are generated by the daily scanner (MACD, RSI, MA cross, Bollinger confluence).
-    Signal levels: STRONG = 2+ indicators confluent, WEAK = single indicator, WATCH = near threshold.
+    Get recent trading signals. Levels: STRONG (2+ indicators confluent),
+    WEAK (single indicator), WATCH (near threshold).
+
+    Args:
+        ticker: Filter by ticker symbol (optional)
+        level: Filter by signal level: STRONG, WEAK, or WATCH (optional)
+        limit: Max results to return (default 20, max 100)
     """
     from app.models import Signal
-    db = _get_db()
+    db = _db()
     try:
         query = db.query(Signal).order_by(Signal.triggered_at.desc())
-        if params.ticker:
-            query = query.filter(Signal.ticker == params.ticker.upper())
-        if params.level:
-            query = query.filter(Signal.signal_level == params.level.upper())
-        signals = query.limit(params.limit).all()
+        if ticker:
+            query = query.filter(Signal.ticker == ticker.upper())
+        if level:
+            query = query.filter(Signal.signal_level == level.upper())
+        signals = query.limit(min(limit, 100)).all()
 
         if not signals:
-            filters = []
-            if params.ticker:
-                filters.append(f"ticker={params.ticker}")
-            if params.level:
-                filters.append(f"level={params.level}")
-            return f"No signals found{' for ' + ', '.join(filters) if filters else ''}."
+            return "No signals found."
 
-        lines = [f"📊 Signals ({len(signals)} results):\n"]
+        lines = [f"📊 {len(signals)} signal(s):\n"]
         for s in signals:
+            pushed = " ✈️" if s.pushed else ""
             lines.append(
                 f"{_level_emoji(s.signal_level)}{_dir_emoji(s.signal_type)} "
-                f"*{s.ticker}* [{s.signal_level}] {s.signal_type} | "
-                f"{s.indicator} | {s.confidence}% | "
-                f"{s.triggered_at.strftime('%m-%d %H:%M')} UTC\n"
+                f"{s.ticker} [{s.signal_level}] {s.signal_type} | "
+                f"{s.indicator} | {s.confidence}%{pushed} | "
+                f"{s.triggered_at.strftime('%m-%d %H:%M')}\n"
                 f"   {s.message}"
             )
         return "\n".join(lines)
@@ -181,25 +215,28 @@ async def get_signals(params: SignalsInput) -> str:
         db.close()
 
 
-@mcp.tool(name="stock_monitor_scan")
-async def scan_stocks() -> str:
+@mcp.tool
+def stock_monitor_scan() -> str:
     """
     Trigger an immediate scan of all watchlist stocks.
-    Runs all technical indicators (MACD, RSI, MA cross, Bollinger), detects confluence,
-    saves results to DB, and sends Telegram notifications for STRONG signals.
-    This may take 10-30 seconds depending on watchlist size.
+    Runs MACD, RSI, MA cross, Bollinger confluence detection.
+    STRONG signals are sent to Telegram automatically.
+    Takes 10–30s depending on watchlist size.
     """
     import asyncio
     from app.scheduler import scan_all_stocks
 
     try:
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, scan_all_stocks)
-    except Exception as e:
-        return f"❌ Scan failed: {e}"
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(asyncio.get_event_loop().run_in_executor(None, scan_all_stocks))
+        loop.close()
+    except Exception:
+        # Fallback: run directly
+        scan_all_stocks()
 
     from app.models import Signal
-    db = _get_db()
+    db = _db()
     try:
         recent = datetime.now(UTC) - timedelta(minutes=5)
         signals = (
@@ -211,9 +248,9 @@ async def scan_stocks() -> str:
         if not signals:
             return "✅ Scan complete. No signals detected."
 
-        lines = [f"✅ Scan complete — {len(signals)} signal(s) found:\n"]
+        lines = [f"✅ Scan complete — {len(signals)} signal(s):\n"]
         for s in signals:
-            pushed_tag = " ✈️ pushed to Telegram" if s.pushed else ""
+            pushed_tag = " ✈️ pushed" if s.pushed else ""
             lines.append(
                 f"{_level_emoji(s.signal_level)}{_dir_emoji(s.signal_type)} "
                 f"{s.ticker} [{s.signal_level}] {s.signal_type} | "
@@ -221,51 +258,51 @@ async def scan_stocks() -> str:
                 f"   {s.message}"
             )
         strong = sum(1 for s in signals if s.signal_level == "STRONG")
-        lines.append(f"\n{strong} STRONG signal(s) pushed to Telegram." if strong else "\nNo STRONG signals — Telegram not notified.")
+        lines.append(
+            f"\n{'⚡ ' + str(strong) + ' STRONG signal(s) pushed to Telegram.' if strong else 'No STRONG signals — Telegram not notified.'}"
+        )
         return "\n".join(lines)
     finally:
         db.close()
 
 
-@mcp.tool(name="stock_monitor_analyze")
-async def analyze_stock(params: TickerInput) -> str:
+@mcp.tool
+def stock_monitor_analyze(ticker: str) -> str:
     """
-    Full stock analysis for a given ticker.
-    Includes: current price, pre/post-market price, support/resistance levels,
-    action recommendation (buy/sell/hold with price ranges), RSI, analyst consensus,
-    short interest, beta, and upcoming earnings/macro events.
+    Full stock analysis: current price, pre/post-market, support/resistance,
+    action recommendation (buy/sell/hold with price ranges and stop loss),
+    RSI, MA trend, analyst consensus, short interest, beta,
+    and upcoming earnings + macro events (FOMC/CPI/NFP).
+
+    Args:
+        ticker: Stock ticker symbol, e.g. NVDA
     """
-    import asyncio
     from app.bot.analysis import get_stock_analysis
-
-    ticker = params.ticker.upper().strip()
-    try:
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, get_stock_analysis, ticker)
-        return result
-    except Exception as e:
-        return f"❌ Analysis failed for {ticker}: {e}"
+    return get_stock_analysis(ticker.upper().strip())
 
 
-@mcp.tool(name="stock_monitor_get_calendar")
-async def get_calendar(params: CalendarInput) -> str:
+@mcp.tool
+def stock_monitor_get_calendar(days: int = 14) -> str:
     """
-    Get upcoming US economic events (FOMC, CPI, NFP, PCE, GDP) and watchlist earnings.
+    Upcoming US economic events: FOMC, CPI, NFP, PCE, GDP and watchlist earnings.
     Includes market consensus forecast and prior period values when available.
+
+    Args:
+        days: Number of days ahead to show (default 14, max 90)
     """
     from app.bot.calendar import get_upcoming_events_from_db
-    return get_upcoming_events_from_db(days=params.days)
+    return get_upcoming_events_from_db(days=min(days, 90))
 
 
-@mcp.tool(name="stock_monitor_refresh_calendar")
-async def refresh_calendar() -> str:
+@mcp.tool
+def stock_monitor_refresh_calendar() -> str:
     """
-    Force-refresh the economic calendar from Finnhub (earnings + macro forecasts/prior values).
-    Run this to get the latest analyst consensus estimates before a major data release.
+    Force-refresh economic calendar from Finnhub.
+    Updates earnings estimates and macro event forecast/prior values.
     """
-    from app.bot.calendar import refresh_calendar as _refresh
+    from app.bot.calendar import refresh_calendar
     try:
-        result = _refresh()
+        result = refresh_calendar()
         return (
             f"✅ Calendar refreshed:\n"
             f"  • {result.get('official', 0)} official macro events synced\n"
@@ -276,7 +313,18 @@ async def refresh_calendar() -> str:
         return f"❌ Refresh failed: {e}"
 
 
+# ── Health check (HTTP mode) ──────────────────────────────────────────────────
+
+@mcp.custom_route("/health", methods=["GET"])
+async def health(request):
+    from starlette.responses import JSONResponse
+    return JSONResponse({"status": "ok", "service": "stock-signal-monitor-mcp"})
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    mcp.run(transport="stdio")
+    if "--http" in sys.argv:
+        mcp.run(transport="http", host="0.0.0.0", port=8001)
+    else:
+        mcp.run(transport="stdio")
