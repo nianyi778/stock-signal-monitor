@@ -183,7 +183,13 @@ async def btn_scan(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             else:
                 summary += " | 无强信号，未推送"
             lines.append(summary)
-            await update.message.reply_text("\n".join(lines), parse_mode="Markdown", reply_markup=MAIN_KEYBOARD)
+            text = "\n".join(lines)
+            try:
+                await update.message.reply_text(text, parse_mode="Markdown", reply_markup=MAIN_KEYBOARD)
+            except Exception:
+                # Markdown parse failed — strip formatting and retry as plain text
+                plain = text.replace("*", "").replace("_", "").replace("`", "")
+                await update.message.reply_text(plain, reply_markup=MAIN_KEYBOARD)
         finally:
             db.close()
     except Exception as e:
@@ -454,7 +460,10 @@ async def btn_calendar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     result = get_upcoming_events_from_db(days=14)
     if len(result) > 4096:
         result = result[:4090] + "\n..."
-    await update.message.reply_text(result, parse_mode="Markdown", reply_markup=MAIN_KEYBOARD)
+    try:
+        await update.message.reply_text(result, parse_mode="Markdown", reply_markup=MAIN_KEYBOARD)
+    except Exception:
+        await update.message.reply_text(result, reply_markup=MAIN_KEYBOARD)
 
 
 @authorized_only
@@ -494,8 +503,11 @@ async def btn_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 p["position_pct"] = p["current_price"] * p["total_shares"] / denom * 100
         msg = format_portfolio_message(positions, portfolio_value)
         tickers = [p["ticker"] for p in positions if p["total_shares"] > 0]
-        await update.message.reply_text(msg, parse_mode="Markdown",
-                                         reply_markup=portfolio_inline(tickers))
+        try:
+            await update.message.reply_text(msg, parse_mode="Markdown",
+                                             reply_markup=portfolio_inline(tickers))
+        except Exception:
+            await update.message.reply_text(msg, reply_markup=portfolio_inline(tickers))
     finally:
         db.close()
 

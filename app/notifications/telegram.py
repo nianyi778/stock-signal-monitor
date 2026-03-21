@@ -82,7 +82,7 @@ def format_signal_message(
     if sig.volume_ratio:
         lines.append(f"📦 成交量: {sig.volume_ratio:.1f}× 均量 ✅")
     if sig.regime:
-        lines.append(f"🌍 大盘: {sig.regime}")
+        lines.append(f"🌍 大盘: {_escape_md(sig.regime)}")
 
     if summary:
         lines.extend(["", f"_{_escape_md(summary)}_"])
