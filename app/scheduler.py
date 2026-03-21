@@ -82,29 +82,80 @@ def scan_all_stocks() -> None:
                     logger.info(f"No push-worthy signals for {ticker}")
                     continue
 
-                # Get price context for LLM
+                # Get price context for LLM / debate
                 import yfinance as yf
                 import pandas as pd
                 hist = yf.download(ticker, period="5d", progress=False)
                 if hist is not None and isinstance(hist.columns, pd.MultiIndex):
                     hist.columns = hist.columns.droplevel(1)
+                sig0 = push_signals[0]
                 price_context = {
-                    "current_price": push_signals[0].price,
+                    "current_price": sig0.price,
                     "5d_change_pct": 0.0,
-                    "support": None,
-                    "resistance": None,
+                    "support": getattr(sig0, "support", None),
+                    "resistance": getattr(sig0, "resistance", None),
                 }
                 if hist is not None and len(hist) >= 2:
                     start_price = float(hist["Close"].iloc[0])
                     end_price = float(hist["Close"].iloc[-1])
                     price_context["5d_change_pct"] = round((end_price - start_price) / start_price * 100, 2)
 
-                # LLM summary + Telegram push (async in sync context)
+                # ── Step 1: News sentiment ────────────────────────────────────────
+                from app.data.news import get_ticker_sentiment
+                sentiment = _run_async(get_ticker_sentiment(ticker))
+                if sentiment:
+                    logger.info(
+                        f"{ticker}: news sentiment bullish={sentiment['bullish_pct']:.0%} "
+                        f"bearish={sentiment['bearish_pct']:.0%}"
+                    )
+
+                # ── Step 2: Bull/Bear debate (if enabled) ─────────────────────────
+                debate_result = None
+                if settings.enable_debate:
+                    from app.llm.debate import debate_signal
+                    debate_result = _run_async(debate_signal(ticker, push_signals, price_context, sentiment))
+                    logger.info(f"{ticker}: debate → {debate_result.decision} — {debate_result.verdict}")
+                    if debate_result.decision == "SUPPRESS":
+                        logger.info(f"{ticker}: signal suppressed by debate")
+                        continue
+                    elif debate_result.decision == "DOWNGRADE":
+                        logger.info(f"{ticker}: signal downgraded by debate, not pushing")
+                        continue
+
+                # ── Step 3: Position-aware note ────────────────────────────────────
+                from app.models import PositionEntry
+                position_note = None
+                pos_entries = db.query(PositionEntry).filter_by(ticker=ticker, is_active=True).all()
+                if pos_entries:
+                    total_shares = sum(e.shares for e in pos_entries)
+                    avg_price = sum(e.buy_price * e.shares for e in pos_entries) / total_shares
+                    curr = sig0.price
+                    pnl_pct = (curr - avg_price) / avg_price * 100
+                    if pnl_pct < -10:
+                        position_note = (
+                            f"⚠️ 已持 {total_shares:.0f}股 @ \\${avg_price:.2f}，"
+                            f"浮亏 {abs(pnl_pct):.1f}%，请谨慎加仓"
+                        )
+                    elif pnl_pct >= 0:
+                        position_note = (
+                            f"📦 已持 {total_shares:.0f}股 @ \\${avg_price:.2f}（+{pnl_pct:.1f}%）"
+                        )
+                    else:
+                        position_note = (
+                            f"📦 已持 {total_shares:.0f}股 @ \\${avg_price:.2f}（{pnl_pct:.1f}%）"
+                        )
+
+                # ── LLM summary + Telegram push ────────────────────────────────────
                 from app.llm.summarizer import summarize_signals
                 from app.notifications.telegram import format_signal_message, send_telegram
 
+                verdict_str = debate_result.verdict if debate_result else None
                 summary = _run_async(summarize_signals(ticker, push_signals, price_context))
-                message = format_signal_message(ticker, push_signals, summary)
+                message = format_signal_message(
+                    ticker, push_signals, summary,
+                    verdict=verdict_str,
+                    position_note=position_note,
+                )
                 success = _run_async(send_telegram(message))
 
                 if success:

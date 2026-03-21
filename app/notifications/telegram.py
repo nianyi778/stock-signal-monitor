@@ -5,7 +5,13 @@ from app.config import settings
 from app.signals.engine import SignalResult
 
 
-def format_signal_message(ticker: str, signals: list[SignalResult], summary: str) -> str:
+def format_signal_message(
+    ticker: str,
+    signals: list[SignalResult],
+    summary: str,
+    verdict: str | None = None,
+    position_note: str | None = None,
+) -> str:
     """Format a STRONG signal push with full entry/exit/risk details."""
 
     if not signals:
@@ -67,6 +73,12 @@ def format_signal_message(ticker: str, signals: list[SignalResult], summary: str
 
     if summary:
         lines.extend(["", f"_{summary}_"])
+
+    if verdict:
+        lines.extend(["", f"🧠 *辩论裁决:* {verdict}"])
+
+    if position_note:
+        lines.extend(["", position_note])
 
     return "\n".join(lines)
 

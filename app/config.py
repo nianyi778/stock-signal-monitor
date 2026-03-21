@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     push_min_confidence: int = 60
     api_secret: str = ""
     portfolio_value: float = 0.0
+    enable_debate: bool = True          # 推送前多空辩论过滤（3次LLM调用/信号）
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
