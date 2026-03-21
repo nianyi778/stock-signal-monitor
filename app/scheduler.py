@@ -133,16 +133,16 @@ def scan_all_stocks() -> None:
                     pnl_pct = (curr - avg_price) / avg_price * 100
                     if pnl_pct < -10:
                         position_note = (
-                            f"⚠️ 已持 {total_shares:.0f}股 @ \\${avg_price:.2f}，"
+                            f"⚠️ 已持 {total_shares:.0f}股 @ ${avg_price:.2f}，"
                             f"浮亏 {abs(pnl_pct):.1f}%，请谨慎加仓"
                         )
                     elif pnl_pct >= 0:
                         position_note = (
-                            f"📦 已持 {total_shares:.0f}股 @ \\${avg_price:.2f}（+{pnl_pct:.1f}%）"
+                            f"📦 已持 {total_shares:.0f}股 @ ${avg_price:.2f}（+{pnl_pct:.1f}%）"
                         )
                     else:
                         position_note = (
-                            f"📦 已持 {total_shares:.0f}股 @ \\${avg_price:.2f}（{pnl_pct:.1f}%）"
+                            f"📦 已持 {total_shares:.0f}股 @ ${avg_price:.2f}（{pnl_pct:.1f}%）"
                         )
 
                 # ── LLM summary + Telegram push ────────────────────────────────────
