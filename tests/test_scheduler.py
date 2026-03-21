@@ -253,3 +253,32 @@ def test_daily_job_calls_outcome_evaluation():
     mock_check.assert_called_once()
     mock_eval.assert_called_once_with(mock_db)
     mock_db.close.assert_called_once()
+
+
+def test_auto_tune_params_job_calls_auto_tune(db):
+    """auto_tune_params_job() wraps auto_tune_params() with DB session."""
+    from unittest.mock import patch, MagicMock
+
+    with patch("app.scheduler.SessionLocal") as mock_sl, \
+         patch("app.learning.auto_tuner.auto_tune_params", return_value={}) as mock_tune:
+        mock_db = MagicMock()
+        mock_sl.return_value = mock_db
+        from app.scheduler import auto_tune_params_job
+        auto_tune_params_job()
+
+    mock_tune.assert_called_once_with(mock_db)
+    mock_db.close.assert_called_once()
+
+
+def test_monthly_cron_registered(monkeypatch):
+    """start_scheduler() registers a monthly_auto_tune cron job."""
+    from unittest.mock import MagicMock, patch
+    mock_scheduler = MagicMock()
+    monkeypatch.setattr("app.scheduler._scheduler", mock_scheduler)
+
+    with patch("app.scheduler.refresh_calendar_job"):
+        from app.scheduler import start_scheduler
+        start_scheduler()
+
+    job_ids = [call.kwargs.get("id") for call in mock_scheduler.add_job.call_args_list]
+    assert "monthly_auto_tune" in job_ids

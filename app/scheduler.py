@@ -401,6 +401,22 @@ def refresh_calendar_job() -> None:
         logger.error(f"Calendar refresh error: {e}", exc_info=True)
 
 
+def auto_tune_params_job() -> None:
+    """Wrapper for monthly auto-tune cron job. Opens own DB session."""
+    db = SessionLocal()
+    try:
+        from app.learning.auto_tuner import auto_tune_params
+        result = auto_tune_params(db)
+        if result is None:
+            logger.info("Auto-tune skipped: insufficient signal outcomes")
+        else:
+            logger.info(f"Auto-tune complete: {len(result)} params changed")
+    except Exception as e:
+        logger.error(f"Auto-tune error: {e}", exc_info=True)
+    finally:
+        db.close()
+
+
 def _daily_job():
     """Wrapper that runs scan, position monitor, and signal outcome evaluation."""
     scan_all_stocks()
@@ -436,6 +452,13 @@ def start_scheduler() -> None:
         refresh_calendar_job,
         CronTrigger(hour=20, minute=0, timezone="America/New_York"),
         id="calendar_refresh_pm",
+        replace_existing=True,
+    )
+    # Monthly auto-tune: 1st of month at 08:30 ET (offset from 08:00 calendar refresh)
+    _scheduler.add_job(
+        auto_tune_params_job,
+        CronTrigger(day=1, hour=8, minute=30, timezone="America/New_York"),
+        id="monthly_auto_tune",
         replace_existing=True,
     )
     # Also refresh on startup
