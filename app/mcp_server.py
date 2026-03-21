@@ -418,6 +418,74 @@ def stock_monitor_get_positions() -> str:
         db.close()
 
 
+@mcp.tool
+def stock_monitor_get_signal_stats(days: int = 30) -> str:
+    """
+    Signal performance statistics over the last N days.
+    Shows per-indicator win rate, average P&L, and sample count.
+    Uses SignalOutcome table. Returns a message if < 5 outcomes exist.
+
+    Args:
+        days: Lookback window in days (default 30).
+    """
+    from datetime import UTC, datetime, timedelta
+    from app.database import SessionLocal
+    from app.models import SignalOutcome
+
+    db = SessionLocal()
+    try:
+        since = datetime.now(UTC) - timedelta(days=days)
+        outcomes = (
+            db.query(SignalOutcome)
+            .filter(SignalOutcome.evaluated_at >= since)
+            .all()
+        )
+
+        if len(outcomes) < 5:
+            return f"📊 近{days}天信号数据不足（{len(outcomes)} 条），暂无统计"
+
+        # Aggregate per indicator
+        from collections import defaultdict
+        stats: dict[str, dict] = defaultdict(lambda: {"wins": 0, "losses": 0, "neutrals": 0,
+                                                        "win_pcts": [], "loss_pcts": []})
+        for o in outcomes:
+            key = o.indicator
+            if o.result == "WIN":
+                stats[key]["wins"] += 1
+                stats[key]["win_pcts"].append(o.outcome_pct or 0)
+            elif o.result == "LOSS":
+                stats[key]["losses"] += 1
+                stats[key]["loss_pcts"].append(o.outcome_pct or 0)
+            else:
+                stats[key]["neutrals"] += 1
+
+        lines = [f"📈 信号表现统计（近{days}天）\n"]
+        total_wins = sum(s["wins"] for s in stats.values())
+        total_n    = len(outcomes)
+
+        for indicator, s in sorted(stats.items()):
+            n = s["wins"] + s["losses"] + s["neutrals"]
+            if n == 0:
+                continue
+            win_rate = s["wins"] / n
+            avg_win  = sum(s["win_pcts"]) / len(s["win_pcts"]) if s["win_pcts"] else 0.0
+            avg_loss = sum(s["loss_pcts"]) / len(s["loss_pcts"]) if s["loss_pcts"] else 0.0
+            ev       = win_rate * avg_win + (1 - win_rate) * avg_loss
+            icon     = "🟢" if ev > 0 else "🔴"
+            lines.append(
+                f"{icon} {indicator:<12} 胜率 {win_rate:.0%} | "
+                f"均盈 {avg_win:+.1f}% | 均亏 {avg_loss:+.1f}% | "
+                f"期望值 {ev:+.2f}% | 样本 {n}"
+            )
+
+        overall_win_rate = total_wins / total_n if total_n else 0.0
+        lines.append(f"\n整体: {total_n} 条信号 | 胜率 {overall_win_rate:.0%}")
+        return "\n".join(lines)
+
+    finally:
+        db.close()
+
+
 # ── Health check (HTTP mode) ──────────────────────────────────────────────────
 
 @mcp.custom_route("/health", methods=["GET"])
