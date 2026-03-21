@@ -186,7 +186,7 @@ class TestScanAllStocks:
 
         call_log = []
 
-        def side_effect(ticker):
+        def side_effect(ticker, **kwargs):
             call_log.append(ticker)
             if ticker == "BOOM":
                 raise RuntimeError("data unavailable")

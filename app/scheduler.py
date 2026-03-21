@@ -57,7 +57,7 @@ def scan_all_stocks() -> None:
 
         for ticker in tickers:
             try:
-                signals = run_signals(ticker)
+                signals = run_signals(ticker, db=db)
                 if not signals:
                     logger.info(f"No signals for {ticker}")
                     continue
