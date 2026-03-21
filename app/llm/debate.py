@@ -1,13 +1,14 @@
 """Bull/Bear signal debate: 3-round LLM review before pushing STRONG signals.
 
 Flow:
-  1. Bull analyst  → 3 reasons to buy
-  2. Bear analyst  → 3 reasons to sell/wait
+  1. Bull analyst  ─┐  (concurrent)
+  2. Bear analyst  ─┘
   3. Judge         → PUSH / DOWNGRADE / SUPPRESS
 
 Falls back to PUSH on any error so valid signals are never silently dropped.
 """
 
+import asyncio
 import json
 import logging
 from dataclasses import dataclass
@@ -62,8 +63,10 @@ async def debate_signal(
     """
     try:
         ctx = _build_context(ticker, signals, price_context, sentiment)
-        bull_case = await _bull_analyst(ctx)
-        bear_case = await _bear_analyst(ctx)
+        bull_case, bear_case = await asyncio.gather(
+            _bull_analyst(ctx),
+            _bear_analyst(ctx),
+        )
         return await _judge(ticker, ctx, bull_case, bear_case)
     except Exception as e:
         logger.warning(f"Debate failed for {ticker}, defaulting to PUSH: {e}")

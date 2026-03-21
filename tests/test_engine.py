@@ -27,9 +27,10 @@ def _make_flat_df(n: int = 100, price: float = 100.0) -> pd.DataFrame:
 
 def _make_oversold_df() -> pd.DataFrame:
     """
-    Create OHLCV where RSI < 30 (oversold) but NO MACD histogram cross.
-    Pattern: stable then sustained crash (no bounce), keeping histogram
-    monotonically negative so MACD doesn't cross zero.
+    Create OHLCV where RSI crosses BELOW 30 on the last bar (entering oversold event),
+    but NO MACD histogram cross.
+    Pattern: stable then crash, keeping histogram monotonically negative.
+    RSI is mocked in the test to control the crossing event precisely.
     """
     stable = [100.0] * 40
     crash = [100.0 - i * 1.5 for i in range(60)]  # steady drop, no bounce
@@ -48,13 +49,14 @@ def _make_oversold_df() -> pd.DataFrame:
 
 def _make_confluence_df() -> pd.DataFrame:
     """
-    Create OHLCV that triggers both MACD BUY and RSI < 30.
-    Pattern: stable, hard crash (RSI < 30), then one bounce bar
-    that causes MACD histogram to cross zero upward.
+    Create OHLCV that triggers MACD BUY + RSI exiting oversold on the last bar.
+    Pattern: stable, hard crash (RSI < 30), then big recovery that flips
+    MACD histogram positive AND brings RSI back above 30.
+    RSI is mocked in the test to control the exit event precisely.
     """
     stable = [100.0] * 40
-    crash = [100.0 - i * 1.5 for i in range(50)]  # drops to ~25; RSI < 30
-    recover = [crash[-1] + 5.0]  # one bounce bar → MACD histogram crosses zero
+    crash = [100.0 - i * 1.5 for i in range(50)]  # drops to ~25
+    recover = [crash[-1] + 5.0]  # bounce bar → MACD histogram crosses zero
     close = stable + crash + recover
     n = len(close)
     return pd.DataFrame(
@@ -109,11 +111,16 @@ class TestRunSignalsNoSignal:
 class TestRunSignalsSingleIndicator:
     def test_rsi_oversold_returns_weak_buy(self):
         df = _make_oversold_df()
-        with patch("app.signals.engine.fetch_ohlcv", return_value=df):
+        n = len(df)
+        # Mock RSI to produce a clear "entering oversold" event on the last bar:
+        # prev_rsi = 31.5 (above 30), curr_rsi = 27.0 (below 30)
+        rsi_mock = pd.Series([50.0] * (n - 2) + [31.5, 27.0])
+        with patch("app.signals.engine.fetch_ohlcv", return_value=df), \
+             patch("app.signals.engine.calc_rsi", return_value=rsi_mock):
             result = run_signals("OVERSOLD")
 
-        # Should have at least one BUY signal
-        buy_signals = [s for s in result if s.signal_type == "BUY"]
+        # Should have at least one RSI BUY signal (entering oversold event)
+        buy_signals = [s for s in result if s.signal_type == "BUY" and s.indicator == "RSI"]
         assert len(buy_signals) >= 1
 
         # If there's only one BUY indicator, it should be WEAK
@@ -144,18 +151,26 @@ class TestRunSignalsSingleIndicator:
 class TestRunSignalsConfluence:
     def test_confluence_produces_strong_signal(self):
         df = _make_confluence_df()
+        n = len(df)
+        # Mock RSI to produce "exiting oversold" event on last bar (reversal confirmed):
+        # prev_rsi = 24.0 (below 30), curr_rsi = 32.0 (above 30)
+        rsi_mock = pd.Series([50.0] * (n - 2) + [24.0, 32.0])
         with patch("app.signals.engine.fetch_ohlcv", return_value=df), \
+             patch("app.signals.engine.calc_rsi", return_value=rsi_mock), \
              patch("app.signals.engine._get_regime", return_value="BULL"), \
              patch("app.signals.engine._get_avg_volume", return_value=500_000):
             result = run_signals("CONF")
 
         strong_signals = [s for s in result if s.signal_level == "STRONG"]
-        # We expect at least one strong signal from confluence
+        # We expect at least one strong signal from MACD + RSI confluence
         assert len(strong_signals) >= 1
 
     def test_strong_signal_has_plus_separator_in_indicator(self):
         df = _make_confluence_df()
+        n = len(df)
+        rsi_mock = pd.Series([50.0] * (n - 2) + [24.0, 32.0])
         with patch("app.signals.engine.fetch_ohlcv", return_value=df), \
+             patch("app.signals.engine.calc_rsi", return_value=rsi_mock), \
              patch("app.signals.engine._get_regime", return_value="BULL"), \
              patch("app.signals.engine._get_avg_volume", return_value=500_000):
             result = run_signals("CONF")
@@ -167,14 +182,17 @@ class TestRunSignalsConfluence:
 
     def test_strong_signal_confidence_boosted(self):
         df = _make_confluence_df()
+        n = len(df)
+        rsi_mock = pd.Series([50.0] * (n - 2) + [24.0, 32.0])
         with patch("app.signals.engine.fetch_ohlcv", return_value=df), \
+             patch("app.signals.engine.calc_rsi", return_value=rsi_mock), \
              patch("app.signals.engine._get_regime", return_value="BULL"), \
              patch("app.signals.engine._get_avg_volume", return_value=500_000):
             result = run_signals("CONF")
 
         strong_signals = [s for s in result if s.signal_level == "STRONG"]
         if strong_signals:
-            # Confluence adds 20 to max confidence, so should be reasonably high
+            # Confluence adds bonus to max confidence, so should be reasonably high
             assert strong_signals[0].confidence >= 20
 
 

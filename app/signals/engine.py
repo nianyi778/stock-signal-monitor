@@ -137,6 +137,17 @@ def run_signals(ticker: str) -> list[SignalResult]:
     close = df["Close"].reset_index(drop=True)
     price = float(close.iloc[-1])
 
+    # Individual stock trend: price vs 200-day SMA.
+    # Requires 200+ bars; defaults to NEUTRAL for new/short-history stocks.
+    ma200_series = ta.sma(close, length=200)
+    ma200_val = float(ma200_series.iloc[-1]) if ma200_series is not None and not pd.isna(ma200_series.iloc[-1]) else None
+    if ma200_val is None:
+        stock_trend = "NEUTRAL"
+    elif price > ma200_val:
+        stock_trend = "UP"
+    else:
+        stock_trend = "DOWN"
+
     regime = _get_regime()
     avg_vol = _get_avg_volume(df)
     last_vol = float(df["Volume"].iloc[-1]) if "Volume" in df.columns else 0.0
@@ -153,8 +164,11 @@ def run_signals(ticker: str) -> list[SignalResult]:
         prev_hist = hist_valid.iloc[-2]
         curr_hist = hist_valid.iloc[-1]
         if prev_hist < 0 and curr_hist > 0:
-            hist_pct = abs(curr_hist) / close.iloc[-1] * 100  # as percentage of price
-            base_confidence = min(95, int(hist_pct * 500))  # 0.1% diff → 50 confidence
+            # Confidence based on histogram velocity (how fast it's moving away from zero),
+            # not the absolute value on cross day (which is always near zero).
+            velocity_pct = abs(curr_hist - prev_hist) / close.iloc[-1] * 100
+            velocity_bonus = min(25, int(velocity_pct * 600))
+            base_confidence = 55 + velocity_bonus  # range 55–80
             raw_signals.append(SignalResult(
                 ticker=ticker,
                 signal_type="BUY",
@@ -166,8 +180,9 @@ def run_signals(ticker: str) -> list[SignalResult]:
                 message=f"MACD histogram crossed above zero (BUY)",
             ))
         elif prev_hist > 0 and curr_hist < 0:
-            hist_pct = abs(curr_hist) / close.iloc[-1] * 100  # as percentage of price
-            base_confidence = min(95, int(hist_pct * 500))  # 0.1% diff → 50 confidence
+            velocity_pct = abs(curr_hist - prev_hist) / close.iloc[-1] * 100
+            velocity_bonus = min(25, int(velocity_pct * 600))
+            base_confidence = 55 + velocity_bonus  # range 55–80
             raw_signals.append(SignalResult(
                 ticker=ticker,
                 signal_type="SELL",
@@ -180,13 +195,19 @@ def run_signals(ticker: str) -> list[SignalResult]:
             ))
 
     # --- RSI ---
+    # Event-based detection: fire only on crossing days, not every day in the zone.
+    # Two events:
+    #   entering oversold  (prev >= 30, curr < 30): potential setup, confidence 50–70
+    #   exiting  oversold  (prev <  30, curr >= 30): reversal confirmed, confidence 60–90
     rsi = calc_rsi(close)
     rsi_valid = rsi.dropna()
-    if len(rsi_valid) >= 1:
+    if len(rsi_valid) >= 2:
+        prev_rsi = float(rsi_valid.iloc[-2])
         curr_rsi = float(rsi_valid.iloc[-1])
-        if curr_rsi < 30:
-            # Confidence based on distance below 30 threshold (RSI=0 → 95, RSI=29 → ~68)
-            base_confidence = min(95, int((30 - curr_rsi) / 30 * 95) + 50)
+        if prev_rsi >= 30 and curr_rsi < 30:
+            # Just entered oversold territory — potential BUY setup
+            depth = 30 - curr_rsi
+            base_confidence = min(75, int(depth / 30 * 25) + 50)   # 50–75
             raw_signals.append(SignalResult(
                 ticker=ticker,
                 signal_type="BUY",
@@ -195,11 +216,26 @@ def run_signals(ticker: str) -> list[SignalResult]:
                 target_price=None,
                 confidence=base_confidence,
                 signal_level="WEAK",
-                message=f"RSI oversold ({curr_rsi:.1f} < 30)",
+                message=f"RSI entered oversold ({curr_rsi:.1f} ↓ below 30)",
             ))
-        elif curr_rsi > 70:
-            # Confidence based on distance above 70 threshold (RSI=100 → 95, RSI=71 → ~53)
-            base_confidence = min(95, int((curr_rsi - 70) / 30 * 95) + 50)
+        elif prev_rsi < 30 and curr_rsi >= 30:
+            # Exiting oversold — reversal confirmed, stronger signal
+            depth = 30 - prev_rsi
+            base_confidence = min(90, int(depth / 30 * 30) + 60)   # 60–90
+            raw_signals.append(SignalResult(
+                ticker=ticker,
+                signal_type="BUY",
+                indicator="RSI",
+                price=price,
+                target_price=None,
+                confidence=base_confidence,
+                signal_level="WEAK",
+                message=f"RSI exited oversold ({prev_rsi:.1f} → {curr_rsi:.1f}, reversal confirmed)",
+            ))
+        elif prev_rsi <= 70 and curr_rsi > 70:
+            # Just entered overbought territory — potential SELL setup
+            height = curr_rsi - 70
+            base_confidence = min(75, int(height / 30 * 25) + 50)
             raw_signals.append(SignalResult(
                 ticker=ticker,
                 signal_type="SELL",
@@ -208,7 +244,21 @@ def run_signals(ticker: str) -> list[SignalResult]:
                 target_price=None,
                 confidence=base_confidence,
                 signal_level="WEAK",
-                message=f"RSI overbought ({curr_rsi:.1f} > 70)",
+                message=f"RSI entered overbought ({curr_rsi:.1f} ↑ above 70)",
+            ))
+        elif prev_rsi > 70 and curr_rsi <= 70:
+            # Exiting overbought — reversal confirmed
+            height = prev_rsi - 70
+            base_confidence = min(90, int(height / 30 * 30) + 60)
+            raw_signals.append(SignalResult(
+                ticker=ticker,
+                signal_type="SELL",
+                indicator="RSI",
+                price=price,
+                target_price=None,
+                confidence=base_confidence,
+                signal_level="WEAK",
+                message=f"RSI exited overbought ({prev_rsi:.1f} → {curr_rsi:.1f}, reversal confirmed)",
             ))
 
     # --- MA Cross ---
@@ -263,28 +313,35 @@ def run_signals(ticker: str) -> list[SignalResult]:
     curr_lower = lower.dropna().iloc[-1] if lower.dropna().shape[0] > 0 else None
     curr_mid = mid.dropna().iloc[-1] if mid.dropna().shape[0] > 0 else None
 
+    # Bollinger interpretation is trend-context dependent:
+    #   Upper band breach in UPTREND   → skip (riding the band = breakout, don't fade strength)
+    #   Upper band breach in DOWN/NEUTRAL → SELL WATCH (mean reversion likely)
+    #   Lower band breach in DOWNTREND → skip (falling knife, no bottom-picking)
+    #   Lower band breach in UP/NEUTRAL  → BUY WATCH (oversold pullback in uptrend)
     if curr_upper is not None and price > float(curr_upper):
-        bollinger_signals.append(SignalResult(
-            ticker=ticker,
-            signal_type="SELL",
-            indicator="BOLLINGER",
-            price=price,
-            target_price=float(curr_mid) if curr_mid is not None else None,
-            confidence=50,
-            signal_level="WATCH",
-            message=f"Price above upper Bollinger band (WATCH/SELL)",
-        ))
+        if stock_trend != "UP":
+            bollinger_signals.append(SignalResult(
+                ticker=ticker,
+                signal_type="SELL",
+                indicator="BOLLINGER",
+                price=price,
+                target_price=float(curr_mid) if curr_mid is not None else None,
+                confidence=50,
+                signal_level="WATCH",
+                message=f"Price above upper Bollinger band — mean reversion WATCH (trend: {stock_trend})",
+            ))
     elif curr_lower is not None and price < float(curr_lower):
-        bollinger_signals.append(SignalResult(
-            ticker=ticker,
-            signal_type="BUY",
-            indicator="BOLLINGER",
-            price=price,
-            target_price=float(curr_mid) if curr_mid is not None else None,
-            confidence=50,
-            signal_level="WATCH",
-            message=f"Price below lower Bollinger band (WATCH/BUY)",
-        ))
+        if stock_trend != "DOWN":
+            bollinger_signals.append(SignalResult(
+                ticker=ticker,
+                signal_type="BUY",
+                indicator="BOLLINGER",
+                price=price,
+                target_price=float(curr_mid) if curr_mid is not None else None,
+                confidence=50,
+                signal_level="WATCH",
+                message=f"Price below lower Bollinger band — oversold pullback WATCH (trend: {stock_trend})",
+            ))
 
     # --- Confluence Detection ---
     buy_signals = [s for s in raw_signals if s.signal_type == "BUY"]
@@ -293,7 +350,7 @@ def run_signals(ticker: str) -> list[SignalResult]:
     final_signals: list[SignalResult] = []
 
     if len(buy_signals) >= 2:
-        if regime != "BEAR" and volume_ratio >= 1.2:
+        if regime != "BEAR" and stock_trend != "DOWN" and volume_ratio >= 1.2:
             support, resistance, atr = _calc_levels(df, price)
             ent = _build_entry_exit(price, support, resistance, atr)
             if ent:
@@ -320,7 +377,7 @@ def run_signals(ticker: str) -> list[SignalResult]:
                     atr=atr,
                 ))
 
-    if len(sell_signals) >= 2 and volume_ratio >= 1.2 and regime != "BULL":
+    if len(sell_signals) >= 2 and volume_ratio >= 1.2 and regime != "BULL" and stock_trend != "UP":
         support, resistance, atr = _calc_levels(df, price)
         ent = _build_entry_exit(price, support, resistance, atr)
         indicator_str = "+".join(s.indicator for s in sell_signals)
