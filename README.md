@@ -5,7 +5,7 @@
 ![Python](https://img.shields.io/badge/Python-3.12-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-latest-green)
 ![Tests](https://img.shields.io/badge/Tests-107%20passed-brightgreen)
-![Version](https://img.shields.io/badge/version-1.5.4-orange)
+![Version](https://img.shields.io/badge/version-1.5.5-orange)
 ![Docker](https://img.shields.io/badge/Docker-ghcr.io-blue)
 
 ---
@@ -312,6 +312,7 @@ pytest tests/ -v
 | **v1.5.2** | ✅ 已发布 | 录入持仓自动加入自选股，卖出不影响自选 |
 | **v1.5.3** | ✅ 已发布 | 算法修正：ATR 吊灯止损 · 52周高点阻力 · 卖空方向大盘过滤 · 进场区收窄 · EMA20/50 正确命名 |
 | **v1.5.4** | ✅ 已发布 | 信号智能增强：多空辩论过滤 · Finnhub新闻情绪 · 持仓感知推送 · RSI事件检测 · 个股200d趋势过滤 · 布林带趋势感知 |
+| **v1.5.5** | ✅ 已发布 | Telegram Markdown 容错推送：parse 失败自动降级纯文本重试，解决 LLM 生成内容含特殊字符导致推送失败 |
 | **v2.0** | 规划中 | 回测引擎 · Walk-Forward权重优化 · 自学习循环（月度自动调参）|
 | **v3.0** | 规划中 | 盘中实时监控 · React看板 · Finnhub WebSocket新闻流 |
 | **v4.0** | 远期 | 多用户 SaaS · 策略社区 · 付费订阅 |

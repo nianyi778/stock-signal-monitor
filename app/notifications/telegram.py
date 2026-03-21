@@ -119,6 +119,16 @@ async def send_telegram(message: str) -> bool:
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.post(url, json=payload, timeout=10)
-            return resp.status_code == 200
+            if resp.status_code == 200:
+                return True
+            # Retry without parse_mode if Telegram rejects the Markdown formatting
+            if resp.status_code == 400 and "parse" in resp.text.lower():
+                plain_payload = {
+                    "chat_id": settings.telegram_chat_id,
+                    "text": message,
+                }
+                resp2 = await client.post(url, json=plain_payload, timeout=10)
+                return resp2.status_code == 200
+            return False
     except Exception:
         return False
