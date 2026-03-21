@@ -71,3 +71,52 @@ class EconomicEvent(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), nullable=False
     )
+
+
+class ActiveTrade(Base):
+    """Per-signal trade monitoring record. Created when a STRONG signal is pushed."""
+
+    __tablename__ = "active_trades"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    ticker: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    signal_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    entry_low: Mapped[float | None] = mapped_column(Float, nullable=True)
+    entry_high: Mapped[float | None] = mapped_column(Float, nullable=True)
+    valid_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    target_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    stop_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    warn_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    partial_tp: Mapped[float | None] = mapped_column(Float, nullable=True)
+    rr_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    atr_at_signal: Mapped[float | None] = mapped_column(Float, nullable=True)
+    volume_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    regime_state: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    earnings_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    # ACTIVE / STOPPED / TARGET_HIT / EXPIRED / CANCELLED
+    status: Mapped[str] = mapped_column(String(16), default="ACTIVE", nullable=False)
+
+    opened_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False
+    )
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class PositionEntry(Base):
+    """User-recorded actual buy entries. Multiple entries per ticker allowed."""
+
+    __tablename__ = "position_entries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    ticker: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    buy_price: Mapped[float] = mapped_column(Float, nullable=False)
+    shares: Mapped[float] = mapped_column(Float, nullable=False)
+    note: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    sell_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sold_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), nullable=False
+    )
