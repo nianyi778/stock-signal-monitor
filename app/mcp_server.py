@@ -486,6 +486,51 @@ def stock_monitor_get_signal_stats(days: int = 30) -> str:
         db.close()
 
 
+@mcp.tool
+def stock_monitor_get_tuning_history(limit: int = 3) -> str:
+    """
+    Recent auto-tuning events with before/after params and LLM reasoning summary.
+
+    Args:
+        limit: Number of most recent tuning events to show (default 3).
+    """
+    import json as _json
+    from app.database import SessionLocal
+    from app.models import ParamTuningHistory
+
+    db = SessionLocal()
+    try:
+        records = (
+            db.query(ParamTuningHistory)
+            .order_by(ParamTuningHistory.tuned_at.desc())
+            .limit(limit)
+            .all()
+        )
+        if not records:
+            return "📋 暂无自动调参历史记录"
+
+        lines = [f"📋 最近 {len(records)} 次自动调参历史\n"]
+        for rec in records:
+            lines.append(f"🕐 {rec.tuned_at.strftime('%Y-%m-%d %H:%M')} UTC | 分析 {rec.signals_analyzed} 条信号")
+            try:
+                before = _json.loads(rec.params_before)
+                after  = _json.loads(rec.params_after)
+                changed = {k: (before.get(k), v) for k, v in after.items() if abs(v - before.get(k, v)) > 0.0001}
+                if changed:
+                    for k, (old, new) in changed.items():
+                        arrow = "↑" if new > old else "↓"
+                        lines.append(f"  • {k}: {old:.2f} → {new:.2f} {arrow}")
+                else:
+                    lines.append("  • 本次无参数变更")
+            except Exception:
+                lines.append("  （参数解析失败）")
+            lines.append("")
+
+        return "\n".join(lines).strip()
+    finally:
+        db.close()
+
+
 # ── Health check (HTTP mode) ──────────────────────────────────────────────────
 
 @mcp.custom_route("/health", methods=["GET"])

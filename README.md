@@ -130,6 +130,8 @@ _多指标共振看涨，ATR自适应止损，R:R 2.1..._
 | `stock_monitor_get_active_trades` | 查看监控中的活跃持仓信号（止损/目标/状态）|
 | `stock_monitor_add_position` | 录入买入记录（代码 + 均价 + 股数）|
 | `stock_monitor_get_positions` | 查看持仓实时盈亏汇总 |
+| `stock_monitor_get_signal_stats` | 信号表现统计（胜率/期望值/均盈均亏，近N天）|
+| `stock_monitor_get_tuning_history` | 月度自动调参历史（前后参数对比）|
 
 ---
 
@@ -316,6 +318,6 @@ pytest tests/ -v
 | **v1.5.6** | ✅ 已发布 | 修复 Bot Handler 扫描/信号详情页 Markdown parse 错误：`s.message` 含 `_` 导致 "Can't parse entities" |
 | **v1.5.7** | ✅ 已发布 | Code review 修复：信号列表/自选股 name 转义·`apply_sentiment_to_confidence` 生效·DOWNGRADE 写回 DB·`price_context` support/resistance 修正·`]` 补充到转义集 |
 | **v1.5.8** | ✅ 已发布 | 金融算法审查修复：数据从 3mo 扩展到 14mo（MA200/week52high 从未生效）·MA_CROSS 置信度修复·MACD velocity 乘数校准·_get_regime 缓存·SELL 信号止损/目标方向修正 |
-| **v2.0** | 规划中 | 回测引擎 · Walk-Forward权重优化 · 自学习循环（月度自动调参）|
+| **v2.0** | 🚧 开发中 | 自学习回路：信号结果追踪 · 市场情绪融合（F&G+VIX+Finnhub）· 月度LLM自动调参 |
 | **v3.0** | 规划中 | 盘中实时监控 · React看板 · Finnhub WebSocket新闻流 |
 | **v4.0** | 远期 | 多用户 SaaS · 策略社区 · 付费订阅 |
