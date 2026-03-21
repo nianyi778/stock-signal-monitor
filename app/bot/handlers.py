@@ -372,7 +372,11 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         # Telegram message max 4096 chars
         if len(result) > 4096:
             result = result[:4090] + "\n..."
-        await query.message.reply_text(result, parse_mode="Markdown")
+        try:
+            await query.message.reply_text(result, parse_mode="Markdown")
+        except Exception:
+            # Fallback: strip Markdown and send plain text
+            await query.message.reply_text(result)
 
 
 @authorized_only

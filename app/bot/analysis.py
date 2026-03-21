@@ -18,6 +18,13 @@ _MARKET_STATE = {
 }
 
 
+def _md_safe(text: str) -> str:
+    """Escape Markdown special chars in external data (company names, etc.)."""
+    for ch in ("*", "_", "`", "[", "]"):
+        text = text.replace(ch, "\\" + ch)
+    return text
+
+
 def _pct(a, b) -> str:
     """Format percentage change from b to a."""
     if not a or not b:
@@ -107,7 +114,7 @@ def get_stock_analysis(ticker: str) -> str:
         logger.error(f"Failed to fetch info for {ticker}: {e}")
         return f"❌ 无法获取 {ticker} 数据"
 
-    name = info.get("shortName") or info.get("longName") or ticker
+    name = _md_safe(info.get("shortName") or info.get("longName") or ticker)
     price = info.get("currentPrice") or info.get("regularMarketPrice") or 0
     prev_close = info.get("previousClose") or info.get("regularMarketPreviousClose")
     day_change = info.get("regularMarketChangePercent")
