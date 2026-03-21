@@ -21,7 +21,7 @@ async def lifespan(app: FastAPI):
     stop_scheduler()
 
 
-app = FastAPI(title="Stock Signal Monitor", version="1.3.7", lifespan=lifespan)
+app = FastAPI(title="Stock Signal Monitor", version="1.3.8", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
