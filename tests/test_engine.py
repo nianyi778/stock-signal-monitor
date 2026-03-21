@@ -227,3 +227,24 @@ class TestBollingerWatchOnly:
             # target_price should be set (mid band)
             assert bollinger_signals[0].target_price is not None
             assert bollinger_signals[0].target_price > 0
+
+
+def test_run_signals_with_db_param(db):
+    """run_signals accepts a db parameter and uses get_param() for thresholds."""
+    import pandas as pd
+    from unittest.mock import patch
+
+    # Minimal OHLCV mock: 250 rows of flat price so MA200 is defined
+    rows = 250
+    close_vals = [100.0] * rows
+    mock_df = pd.DataFrame({
+        "Open": close_vals, "High": [101.0] * rows,
+        "Low": [99.0] * rows, "Close": close_vals,
+        "Volume": [2_000_000] * rows,
+    })
+
+    with patch("app.signals.engine.fetch_ohlcv", return_value=mock_df):
+        from app.signals.engine import run_signals
+        # Should not raise even with a real db session
+        result = run_signals("AAPL", db=db)
+        assert isinstance(result, list)

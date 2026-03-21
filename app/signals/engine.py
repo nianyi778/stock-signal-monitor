@@ -98,8 +98,8 @@ def _calc_levels(df: pd.DataFrame, price: float):
     return support, resistance, atr
 
 
-def _build_entry_exit(price: float, support: Optional[float], resistance, atr):
-    """Compute entry/stop/target. Returns None if R:R < 1.5."""
+def _build_entry_exit(price: float, support: Optional[float], resistance, atr, rr_ratio_min: float = 1.5):
+    """Compute entry/stop/target. Returns None if R:R < rr_ratio_min."""
     if support is None:
         return None  # no technical support found, skip signal
     if atr is None or atr <= 0:
@@ -119,7 +119,7 @@ def _build_entry_exit(price: float, support: Optional[float], resistance, atr):
         return None
 
     rr = (resistance - mid_entry) / (mid_entry - stop)
-    if rr < 1.5:
+    if rr < rr_ratio_min:
         return None
 
     return {
@@ -133,9 +133,16 @@ def _build_entry_exit(price: float, support: Optional[float], resistance, atr):
     }
 
 
-def run_signals(ticker: str) -> list[SignalResult]:
+def run_signals(ticker: str, db=None) -> list[SignalResult]:
     """
     Run all indicator signals for a given ticker.
+
+    Args:
+        ticker: Stock symbol.
+        db: Optional SQLAlchemy session. When provided, tunable parameters
+            (volume_ratio_min, rr_ratio_min, indicator weights) are read
+            from IndicatorParams table via get_param(). Falls back to
+            hardcoded defaults when db is None.
 
     Returns a list of SignalResult objects, applying confluence detection:
     - If 2+ BUY signals from MACD/RSI/MA_CROSS → STRONG BUY confluence
@@ -165,6 +172,10 @@ def run_signals(ticker: str) -> list[SignalResult]:
     avg_vol = _get_avg_volume(df)
     last_vol = float(df["Volume"].iloc[-1]) if "Volume" in df.columns else 0.0
     volume_ratio = round(last_vol / avg_vol, 2) if avg_vol > 0 else 0.0
+
+    from app.learning.params import get_param
+    _volume_ratio_min = get_param(db, "volume_ratio_min", 1.2)
+    _rr_ratio_min = get_param(db, "rr_ratio_min", 1.5)
 
     raw_signals: list[SignalResult] = []
 
@@ -362,6 +373,17 @@ def run_signals(ticker: str) -> list[SignalResult]:
                 message=f"Price below lower Bollinger band — oversold pullback WATCH (trend: {stock_trend})",
             ))
 
+    # Apply per-indicator confidence weights from IndicatorParams
+    _weight_map = {
+        "MACD":     get_param(db, "macd_weight",     1.0),
+        "RSI":      get_param(db, "rsi_weight",      1.0),
+        "MA_CROSS": get_param(db, "ma_cross_weight", 1.0),
+    }
+    for sig in raw_signals:
+        w = _weight_map.get(sig.indicator, 1.0)
+        if w != 1.0:
+            sig.confidence = int(min(95, sig.confidence * w))
+
     # --- Confluence Detection ---
     buy_signals = [s for s in raw_signals if s.signal_type == "BUY"]
     sell_signals = [s for s in raw_signals if s.signal_type == "SELL"]
@@ -369,9 +391,9 @@ def run_signals(ticker: str) -> list[SignalResult]:
     final_signals: list[SignalResult] = []
 
     if len(buy_signals) >= 2:
-        if regime != "BEAR" and stock_trend != "DOWN" and volume_ratio >= 1.2:
+        if regime != "BEAR" and stock_trend != "DOWN" and volume_ratio >= _volume_ratio_min:
             support, resistance, atr = _calc_levels(df, price)
-            ent = _build_entry_exit(price, support, resistance, atr)
+            ent = _build_entry_exit(price, support, resistance, atr, rr_ratio_min=_rr_ratio_min)
             if ent:
                 indicator_str = "+".join(s.indicator for s in buy_signals)
                 max_conf = max(s.confidence for s in buy_signals)
@@ -396,7 +418,7 @@ def run_signals(ticker: str) -> list[SignalResult]:
                     atr=atr,
                 ))
 
-    if len(sell_signals) >= 2 and volume_ratio >= 1.2 and regime != "BULL" and stock_trend != "UP":
+    if len(sell_signals) >= 2 and volume_ratio >= _volume_ratio_min and regime != "BULL" and stock_trend != "UP":
         _, _, atr = _calc_levels(df, price)
         indicator_str = "+".join(s.indicator for s in sell_signals)
         max_conf = max(s.confidence for s in sell_signals)
