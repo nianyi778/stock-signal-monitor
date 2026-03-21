@@ -61,6 +61,7 @@ def test_signal_outcome_create(db):
     assert db.query(SignalOutcome).count() == 1
     assert db.query(SignalOutcome).first().result == "WIN"
 
+
 def test_indicator_params_create(db):
     from app.models import IndicatorParams
     p = IndicatorParams(param_key="push_min_confidence", param_value=65.0, updated_by="test")

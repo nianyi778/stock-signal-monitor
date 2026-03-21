@@ -132,7 +132,7 @@ class SignalOutcome(Base):
 
     id:            Mapped[int]            = mapped_column(Integer, primary_key=True)
     signal_id:     Mapped[int]            = mapped_column(Integer, ForeignKey("signals.id"), nullable=False, index=True)
-    ticker:        Mapped[str]            = mapped_column(String(10), nullable=False)
+    ticker:        Mapped[str]            = mapped_column(String(16), nullable=False)
     indicator:     Mapped[str]            = mapped_column(String(64), nullable=False)
     signal_type:   Mapped[str]            = mapped_column(String(8), nullable=False)
     entry_price:   Mapped[float]          = mapped_column(Float, nullable=False)
