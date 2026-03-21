@@ -40,6 +40,7 @@ class Signal(Base):
     # indicator: e.g. "MACD+RSI", "RSI", "BOLL"
     indicator: Mapped[str] = mapped_column(String(64), nullable=False)
     price: Mapped[float] = mapped_column(Float, nullable=False)
+    stop_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     target_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     message: Mapped[str] = mapped_column(String(512), nullable=False)
     # confidence: 0-100 integer score
