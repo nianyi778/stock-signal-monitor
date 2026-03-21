@@ -128,3 +128,21 @@ class TestSendTelegram:
 
         assert result is False
         mock_client_cls.assert_not_called()
+
+
+def test_format_includes_entry_exit():
+    from app.signals.engine import SignalResult
+    from app.notifications.telegram import format_signal_message
+    sig = SignalResult(
+        ticker="NVDA", signal_type="BUY", indicator="MACD+RSI",
+        price=882.0, target_price=950.0, confidence=85,
+        signal_level="STRONG", message="test",
+        entry_low=875.0, entry_high=886.0, stop_price=844.0,
+        warn_price=851.0, partial_tp=902.5, rr_ratio=2.1,
+        volume_ratio=1.4, regime="BULL",
+    )
+    msg = format_signal_message("NVDA", [sig], "测试摘要")
+    assert "875" in msg
+    assert "950" in msg
+    assert "844" in msg
+    assert "R:R" in msg
