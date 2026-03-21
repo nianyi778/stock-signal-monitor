@@ -45,6 +45,16 @@ def scan_all_stocks() -> None:
         tickers = [item.ticker for item in db.query(WatchlistItem).filter(WatchlistItem.is_active == True).all()]
         logger.info(f"Starting scan for {len(tickers)} tickers")
 
+        # ── Phase B: Market Sentiment (once per scan run) ─────────────────────
+        from app.data.market_sentiment import get_market_sentiment
+        market_sentiment = _run_async(get_market_sentiment(tickers))
+        logger.info(
+            f"Market sentiment: F&G={market_sentiment.fear_greed_score} "
+            f"({market_sentiment.fear_greed_label}), "
+            f"VIX slope={market_sentiment.vix_30d_slope:+.3f}, "
+            f"composite={market_sentiment.composite_score}"
+        )
+
         for ticker in tickers:
             try:
                 signals = run_signals(ticker)
@@ -126,6 +136,38 @@ def scan_all_stocks() -> None:
                         db.commit()
                         logger.info(f"{ticker}: signal {debate_result.decision.lower()}d by debate")
                         continue
+
+                # ── Phase B: Apply market-wide sentiment adjustments ──────────────
+                fg = market_sentiment.fear_greed_score
+                vix_slope = market_sentiment.vix_30d_slope
+
+                for sig in push_signals:
+                    # Contrarian: extreme fear is good for BUY, bad for SELL
+                    if fg < 25 and sig.signal_type == "BUY":
+                        sig.confidence = min(95, sig.confidence + 5)
+                    elif fg < 25 and sig.signal_type == "SELL":
+                        sig.confidence = max(0, sig.confidence - 10)
+                    elif fg > 75 and sig.signal_type == "BUY":
+                        sig.confidence = max(0, sig.confidence - 5)
+                    elif fg > 75 and sig.signal_type == "SELL":
+                        sig.confidence = min(95, sig.confidence + 5)
+
+                # Adjust effective push threshold based on VIX trend (in-memory only).
+                # Use get_param() so Phase C auto-tuned values are respected.
+                from app.learning.params import get_param
+                effective_min_confidence = int(get_param(db, "push_min_confidence", settings.push_min_confidence))
+                if vix_slope > 0.3:
+                    effective_min_confidence += 5   # fear rising → be stricter
+                elif vix_slope < -0.3:
+                    effective_min_confidence = max(45, effective_min_confidence - 3)
+
+                push_signals = [
+                    s for s in push_signals
+                    if s.confidence >= effective_min_confidence
+                ]
+                if not push_signals:
+                    logger.info(f"No push-worthy signals for {ticker} after sentiment filter")
+                    continue
 
                 # ── Step 3: Position-aware note ────────────────────────────────────
                 from app.models import PositionEntry

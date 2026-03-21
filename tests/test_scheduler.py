@@ -210,6 +210,31 @@ class TestScanAllStocks:
         session.close()
 
 
+def test_scan_uses_market_sentiment(monkeypatch):
+    """scan_all_stocks() fetches market sentiment once before the per-ticker loop."""
+    from unittest.mock import patch, MagicMock
+    from app.data.market_sentiment import MarketSentiment
+
+    neutral_sentiment = MarketSentiment(
+        fear_greed_score=50, fear_greed_label="Neutral",
+        vix_30d_slope=0.0, finnhub_bullish_pct=0.5, composite_score=50,
+    )
+
+    with patch("app.scheduler.SessionLocal") as mock_sl, \
+         patch("app.scheduler._run_async", return_value=neutral_sentiment) as mock_async, \
+         patch("app.scheduler.run_signals", return_value=[]) as mock_rs:
+        mock_db = MagicMock()
+        mock_db.__enter__ = MagicMock(return_value=mock_db)
+        mock_db.__exit__  = MagicMock(return_value=False)
+        mock_db.query.return_value.filter.return_value.all.return_value = []
+        mock_sl.return_value = mock_db
+        from app.scheduler import scan_all_stocks
+        scan_all_stocks()
+
+    # _run_async should have been called for get_market_sentiment
+    assert mock_async.call_count >= 1
+
+
 def test_daily_job_calls_outcome_evaluation():
     """_daily_job() invokes evaluate_signal_outcomes after check_active_trades."""
     from unittest.mock import patch, MagicMock
