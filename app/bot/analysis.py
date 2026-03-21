@@ -63,7 +63,7 @@ def _action_score(signals, rsi_val, price, ma50, ma200, analyst_bulls, analyst_b
     return score
 
 
-def _build_action(score: float, price: float, support: float | None, resistance: float | None) -> list[str]:
+def _build_action(score: float, price: float, support: float | None, resistance: float | None, hist=None) -> list[str]:
     """Produce actionable recommendation lines."""
     lines = []
     if score >= 3:
@@ -88,9 +88,19 @@ def _build_action(score: float, price: float, support: float | None, resistance:
         if score >= 1.5 and support:
             buy_low = round(support * 1.002, 2)
             buy_high = round(price * 1.01, 2)
-            stop = round(support * 0.97, 2)
+            # ATR-based stop: 2×ATR below current price, but must be below support
+            try:
+                from app.signals.indicators import calc_atr
+                close_s = pd.Series([float(v) for v in hist["Close"].values])
+                high_s  = pd.Series([float(v) for v in hist["High"].values])
+                low_s   = pd.Series([float(v) for v in hist["Low"].values])
+                atr_series = calc_atr(high_s, low_s, close_s)
+                atr_val = float(atr_series.dropna().iloc[-1]) if atr_series.dropna().shape[0] > 0 else price * 0.02
+            except Exception:
+                atr_val = price * 0.02
+            stop = round(min(price - 2 * atr_val, support - 0.3 * atr_val), 2)
             lines.append(f"  📥 买入区间: ${buy_low:.2f} ~ ${buy_high:.2f}")
-            lines.append(f"  🛑 止损参考: ${stop:.2f}（支撑下方 3%）")
+            lines.append(f"  🛑 止损参考: ${stop:.2f}（ATR 止损）")
             if resistance:
                 upside = _pct(resistance, price)
                 lines.append(f"  🎯 目标阻力: ${resistance:.2f}（{upside}）")
@@ -241,7 +251,7 @@ def get_stock_analysis(ticker: str) -> str:
     nearest_support = max((v for v in all_levels if v < price), default=None) if price else None
     nearest_resist = min((v for v in all_levels if v > price), default=None) if price else None
 
-    action_lines = _build_action(score, price, nearest_support, nearest_resist)
+    action_lines = _build_action(score, price, nearest_support, nearest_resist, hist=hist if close is not None else None)
     lines.extend(action_lines)
 
     # Show active signals

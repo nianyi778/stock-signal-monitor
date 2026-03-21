@@ -43,10 +43,13 @@ def calc_rsi(close: pd.Series, period: int = 14) -> pd.Series:
 
 
 def calc_ma_cross(close: pd.Series, fast: int = 20, slow: int = 50) -> dict:
-    """Detect golden cross and death cross events.
+    """Detect EMA20/50 cross events (bullish cross and bearish cross).
 
-    golden_cross: fast EMA crosses above slow EMA (fast > slow where previously fast <= slow)
-    death_cross:  fast EMA crosses below slow EMA (fast < slow where previously fast >= slow)
+    Note: "golden cross" / "death cross" canonically refer to 50/200 SMA crosses.
+    This function detects EMA20/50 crosses, which are shorter-term momentum signals.
+
+    golden_cross (bullish): fast EMA crosses above slow EMA (fast > slow where previously fast <= slow)
+    death_cross (bearish):  fast EMA crosses below slow EMA (fast < slow where previously fast >= slow)
 
     Returns:
         dict with keys 'golden_cross', 'death_cross' — each a bool pd.Series.

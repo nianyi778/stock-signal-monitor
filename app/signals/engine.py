@@ -76,22 +76,29 @@ def _calc_levels(df: pd.DataFrame, price: float):
     recent_low  = float(low.tail(20).min())
 
     candidates_support = [v for v in [bb_lower, recent_low] if v and v < price]
-    support = max(candidates_support) if candidates_support else price * 0.97
+    support = max(candidates_support) if candidates_support else None
 
-    candidates_resist = [v for v in [bb_upper, recent_high] if v and v > price]
+    week52_high = float(high.max())  # full dataset range as 52w proxy
+    candidates_resist = [v for v in [bb_upper, recent_high, week52_high] if v and v > price]
     resistance = min(candidates_resist) if candidates_resist else None
 
     return support, resistance, atr
 
 
-def _build_entry_exit(price: float, support: float, resistance, atr):
+def _build_entry_exit(price: float, support: Optional[float], resistance, atr):
     """Compute entry/stop/target. Returns None if R:R < 1.5."""
+    if support is None:
+        return None  # no technical support found, skip signal
     if atr is None or atr <= 0:
         atr = price * 0.02
 
-    entry_low  = round(support * 1.002, 2)
+    entry_low  = round(max(support * 1.002, price * 0.995), 2)
     entry_high = round(price * 1.005, 2)
-    stop       = round(support - 1.5 * atr, 2)
+    # Primary stop: 2×ATR below current price (standard chandelier stop)
+    # Secondary: must be at or below support (technical floor)
+    atr_stop  = round(price - 2 * atr, 2)
+    tech_stop = round(support - 0.3 * atr, 2)   # small buffer below support
+    stop = min(atr_stop, tech_stop)              # take the lower (wider) of the two
     warn       = round(stop + 0.75 * atr, 2)
     mid_entry  = (entry_low + entry_high) / 2
 
@@ -227,7 +234,7 @@ def run_signals(ticker: str) -> list[SignalResult]:
             target_price=slow_val,
             confidence=base_confidence,
             signal_level="WEAK",
-            message="Golden cross: 20 EMA crossed above 50 EMA (BUY)",
+            message="EMA20/50 bullish cross: 20 EMA crossed above 50 EMA (BUY)",
         ))
     elif death_cross.iloc[-1]:
         slow_val = float(slow_ma.iloc[-1]) if not pd.isna(slow_ma.iloc[-1]) else None
@@ -242,7 +249,7 @@ def run_signals(ticker: str) -> list[SignalResult]:
             target_price=slow_val,
             confidence=base_confidence,
             signal_level="WEAK",
-            message="Death cross: 20 EMA crossed below 50 EMA (SELL)",
+            message="EMA20/50 bearish cross: 20 EMA crossed below 50 EMA (SELL)",
         ))
 
     # --- Bollinger ---
@@ -313,7 +320,7 @@ def run_signals(ticker: str) -> list[SignalResult]:
                     atr=atr,
                 ))
 
-    if len(sell_signals) >= 2 and volume_ratio >= 1.2:
+    if len(sell_signals) >= 2 and volume_ratio >= 1.2 and regime != "BULL":
         support, resistance, atr = _calc_levels(df, price)
         ent = _build_entry_exit(price, support, resistance, atr)
         indicator_str = "+".join(s.indicator for s in sell_signals)
@@ -328,8 +335,8 @@ def run_signals(ticker: str) -> list[SignalResult]:
             confidence=confluence_conf,
             signal_level="STRONG",
             message=f"Strong SELL: {indicator_str} confluence",
-            entry_low=ent["entry_low"] if ent else None,
-            entry_high=ent["entry_high"] if ent else None,
+            entry_low=None,    # not applicable for SELL
+            entry_high=None,   # not applicable for SELL
             stop_price=ent["stop_price"] if ent else None,
             warn_price=ent["warn_price"] if ent else None,
             partial_tp=ent["partial_tp"] if ent else None,
