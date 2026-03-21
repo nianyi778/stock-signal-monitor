@@ -80,3 +80,26 @@ def test_param_tuning_history_create(db):
     db.add(h)
     db.commit()
     assert db.query(ParamTuningHistory).first().signals_analyzed == 20
+
+
+def test_get_param_fallback(db):
+    """get_param returns default when key absent."""
+    from app.learning.params import get_param
+    result = get_param(db, "push_min_confidence", 60.0)
+    assert result == 60.0
+
+
+def test_get_param_from_db(db):
+    """get_param reads from IndicatorParams when key present."""
+    from app.models import IndicatorParams
+    from app.learning.params import get_param
+    db.add(IndicatorParams(param_key="rr_ratio_min", param_value=2.0))
+    db.commit()
+    result = get_param(db, "rr_ratio_min", 1.5)
+    assert result == 2.0
+
+
+def test_get_param_with_none_db():
+    """get_param returns default when db is None."""
+    from app.learning.params import get_param
+    assert get_param(None, "volume_ratio_min", 1.2) == 1.2
