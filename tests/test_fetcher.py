@@ -32,7 +32,7 @@ class TestFetchOHLCV:
             assert list(result.columns) == ["Open", "High", "Low", "Close", "Volume"]
             assert len(result) == 33
             mock_download.assert_called_once_with(
-                "AAPL", period="3mo", interval="1d", progress=False
+                "AAPL", period="14mo", interval="1d", progress=False
             )
 
     def test_fetch_ohlcv_with_custom_period_and_interval(self):
