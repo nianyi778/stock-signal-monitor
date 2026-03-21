@@ -484,9 +484,13 @@ async def btn_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             except Exception:
                 price = 0.0
             summary = get_positions_summary(db, r["ticker"], price)
-            if portfolio_value > 0 and price > 0:
-                summary["position_pct"] = price * summary["total_shares"] / portfolio_value * 100
             positions.append(summary)
+        # If PORTFOLIO_VALUE set, use it; otherwise fall back to total positions market value (assumes fully invested)
+        total_market_value = sum(p["current_price"] * p["total_shares"] for p in positions if p["current_price"])
+        denom = portfolio_value if portfolio_value > 0 else total_market_value
+        if denom > 0:
+            for p in positions:
+                p["position_pct"] = p["current_price"] * p["total_shares"] / denom * 100
         msg = format_portfolio_message(positions, portfolio_value)
         tickers = [p["ticker"] for p in positions if p["total_shares"] > 0]
         await update.message.reply_text(msg, parse_mode="Markdown",
