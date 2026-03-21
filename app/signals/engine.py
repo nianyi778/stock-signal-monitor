@@ -5,6 +5,7 @@ from typing import Optional
 
 import pandas as pd
 import pandas_ta as ta
+import yfinance as yf
 
 from app.data.fetcher import fetch_ohlcv
 from app.signals.indicators import calc_bollinger, calc_macd, calc_rsi
@@ -20,6 +21,96 @@ class SignalResult:
     confidence: int         # 0-100
     signal_level: str       # "STRONG" / "WEAK" / "WATCH"
     message: str
+    # V2 fields
+    entry_low: float | None = None
+    entry_high: float | None = None
+    stop_price: float | None = None
+    warn_price: float | None = None
+    partial_tp: float | None = None
+    rr_ratio: float | None = None
+    volume_ratio: float | None = None
+    regime: str | None = None
+    atr: float | None = None
+
+
+def _get_regime() -> str:
+    """Check SPY vs 50-day MA and VIX. Returns BULL/BEAR/NEUTRAL."""
+    try:
+        spy_info = yf.Ticker("SPY").fast_info
+        price = spy_info.get("lastPrice") or spy_info.get("last_price") or 0
+        ma50 = spy_info.get("fiftyDayAverage") or spy_info.get("fifty_day_average") or 0
+        vix_info = yf.Ticker("^VIX").fast_info
+        vix = vix_info.get("lastPrice") or vix_info.get("last_price") or 0
+        if price > ma50 and vix < 25:
+            return "BULL"
+        elif vix >= 25:
+            return "BEAR"
+        return "NEUTRAL"
+    except Exception:
+        return "NEUTRAL"
+
+
+def _get_avg_volume(df: pd.DataFrame) -> float:
+    """Return 20-day average volume from OHLCV DataFrame."""
+    vol = df.get("Volume")
+    if vol is None or len(vol) < 5:
+        return 0.0
+    return float(vol.tail(20).mean())
+
+
+def _calc_levels(df: pd.DataFrame, price: float):
+    """Return (support, resistance, atr) from recent price data."""
+    from app.signals.indicators import calc_atr, calc_bollinger
+    close = df["Close"].reset_index(drop=True)
+    high  = df["High"].reset_index(drop=True)
+    low   = df["Low"].reset_index(drop=True)
+
+    atr_series = calc_atr(high, low, close)
+    atr = float(atr_series.dropna().iloc[-1]) if atr_series.dropna().shape[0] > 0 else None
+
+    bb = calc_bollinger(close)
+    bb_upper = float(bb["upper"].dropna().iloc[-1]) if bb["upper"].dropna().shape[0] > 0 else None
+    bb_lower = float(bb["lower"].dropna().iloc[-1]) if bb["lower"].dropna().shape[0] > 0 else None
+
+    recent_high = float(high.tail(20).max())
+    recent_low  = float(low.tail(20).min())
+
+    candidates_support = [v for v in [bb_lower, recent_low] if v and v < price]
+    support = max(candidates_support) if candidates_support else price * 0.97
+
+    candidates_resist = [v for v in [bb_upper, recent_high] if v and v > price]
+    resistance = min(candidates_resist) if candidates_resist else None
+
+    return support, resistance, atr
+
+
+def _build_entry_exit(price: float, support: float, resistance, atr):
+    """Compute entry/stop/target. Returns None if R:R < 1.5."""
+    if atr is None or atr <= 0:
+        atr = price * 0.02
+
+    entry_low  = round(support * 1.002, 2)
+    entry_high = round(price * 1.005, 2)
+    stop       = round(support - 1.5 * atr, 2)
+    warn       = round(stop + 0.75 * atr, 2)
+    mid_entry  = (entry_low + entry_high) / 2
+
+    if resistance is None or resistance <= mid_entry:
+        return None
+
+    rr = (resistance - mid_entry) / (mid_entry - stop)
+    if rr < 1.5:
+        return None
+
+    return {
+        "entry_low": entry_low,
+        "entry_high": entry_high,
+        "stop_price": stop,
+        "warn_price": warn,
+        "target_price": round(resistance, 2),
+        "partial_tp": round(resistance * 0.95, 2),
+        "rr_ratio": round(rr, 2),
+    }
 
 
 def run_signals(ticker: str) -> list[SignalResult]:
@@ -38,6 +129,11 @@ def run_signals(ticker: str) -> list[SignalResult]:
 
     close = df["Close"].reset_index(drop=True)
     price = float(close.iloc[-1])
+
+    regime = _get_regime()
+    avg_vol = _get_avg_volume(df)
+    last_vol = float(df["Volume"].iloc[-1]) if "Volume" in df.columns else 0.0
+    volume_ratio = round(last_vol / avg_vol, 2) if avg_vol > 0 else 0.0
 
     raw_signals: list[SignalResult] = []
 
@@ -184,57 +280,80 @@ def run_signals(ticker: str) -> list[SignalResult]:
         ))
 
     # --- Confluence Detection ---
-    # Only MACD, RSI, MA_CROSS contribute to confluence (not Bollinger)
     buy_signals = [s for s in raw_signals if s.signal_type == "BUY"]
     sell_signals = [s for s in raw_signals if s.signal_type == "SELL"]
 
     final_signals: list[SignalResult] = []
 
     if len(buy_signals) >= 2:
-        indicator_str = "+".join(s.indicator for s in buy_signals)
-        max_conf = max(s.confidence for s in buy_signals)
-        confluence_boost = 10 * len(buy_signals)  # 2 indicators = +20, 3 = +30
-        confluence_conf = min(95, max_conf + confluence_boost)
-        strong_buy = SignalResult(
-            ticker=ticker,
-            signal_type="BUY",
-            indicator=indicator_str,
-            price=price,
-            target_price=None,
-            confidence=confluence_conf,
-            signal_level="STRONG",
-            message=f"Strong BUY: {indicator_str} confluence detected",
-        )
-        final_signals.append(strong_buy)
+        if regime != "BEAR" and volume_ratio >= 1.2:
+            support, resistance, atr = _calc_levels(df, price)
+            ent = _build_entry_exit(price, support, resistance, atr)
+            if ent:
+                indicator_str = "+".join(s.indicator for s in buy_signals)
+                max_conf = max(s.confidence for s in buy_signals)
+                confluence_conf = min(95, max_conf + 10 * len(buy_signals))
+                final_signals.append(SignalResult(
+                    ticker=ticker,
+                    signal_type="BUY",
+                    indicator=indicator_str,
+                    price=price,
+                    target_price=ent["target_price"],
+                    confidence=confluence_conf,
+                    signal_level="STRONG",
+                    message=f"Strong BUY: {indicator_str} confluence",
+                    entry_low=ent["entry_low"],
+                    entry_high=ent["entry_high"],
+                    stop_price=ent["stop_price"],
+                    warn_price=ent["warn_price"],
+                    partial_tp=ent["partial_tp"],
+                    rr_ratio=ent["rr_ratio"],
+                    volume_ratio=volume_ratio,
+                    regime=regime,
+                    atr=atr,
+                ))
 
     if len(sell_signals) >= 2:
+        support, resistance, atr = _calc_levels(df, price)
+        ent = _build_entry_exit(price, support, resistance, atr)
         indicator_str = "+".join(s.indicator for s in sell_signals)
         max_conf = max(s.confidence for s in sell_signals)
-        confluence_boost = 10 * len(sell_signals)  # 2 indicators = +20, 3 = +30
-        confluence_conf = min(95, max_conf + confluence_boost)
-        strong_sell = SignalResult(
+        confluence_conf = min(95, max_conf + 10 * len(sell_signals))
+        final_signals.append(SignalResult(
             ticker=ticker,
             signal_type="SELL",
             indicator=indicator_str,
             price=price,
-            target_price=None,
+            target_price=ent["target_price"] if ent else None,
             confidence=confluence_conf,
             signal_level="STRONG",
-            message=f"Strong SELL: {indicator_str} confluence detected",
-        )
-        final_signals.append(strong_sell)
+            message=f"Strong SELL: {indicator_str} confluence",
+            stop_price=ent["stop_price"] if ent else None,
+            warn_price=ent["warn_price"] if ent else None,
+            rr_ratio=ent["rr_ratio"] if ent else None,
+            volume_ratio=volume_ratio,
+            regime=regime,
+            atr=atr,
+        ))
 
-    # Add weak signals only if NO confluence exists for that direction
     has_strong_buy = any(s.signal_type == "BUY" and s.signal_level == "STRONG" for s in final_signals)
     has_strong_sell = any(s.signal_type == "SELL" and s.signal_level == "STRONG" for s in final_signals)
 
     if not has_strong_buy:
-        final_signals.extend(buy_signals)  # already set to WEAK
+        for s in buy_signals:
+            s.volume_ratio = volume_ratio
+            s.regime = regime
+        final_signals.extend(buy_signals)
 
     if not has_strong_sell:
-        final_signals.extend(sell_signals)  # already set to WEAK
+        for s in sell_signals:
+            s.volume_ratio = volume_ratio
+            s.regime = regime
+        final_signals.extend(sell_signals)
 
-    # Always include Bollinger WATCH signals
+    for s in bollinger_signals:
+        s.volume_ratio = volume_ratio
+        s.regime = regime
     final_signals.extend(bollinger_signals)
 
     return final_signals

@@ -144,7 +144,9 @@ class TestRunSignalsSingleIndicator:
 class TestRunSignalsConfluence:
     def test_confluence_produces_strong_signal(self):
         df = _make_confluence_df()
-        with patch("app.signals.engine.fetch_ohlcv", return_value=df):
+        with patch("app.signals.engine.fetch_ohlcv", return_value=df), \
+             patch("app.signals.engine._get_regime", return_value="BULL"), \
+             patch("app.signals.engine._get_avg_volume", return_value=500_000):
             result = run_signals("CONF")
 
         strong_signals = [s for s in result if s.signal_level == "STRONG"]
@@ -153,7 +155,9 @@ class TestRunSignalsConfluence:
 
     def test_strong_signal_has_plus_separator_in_indicator(self):
         df = _make_confluence_df()
-        with patch("app.signals.engine.fetch_ohlcv", return_value=df):
+        with patch("app.signals.engine.fetch_ohlcv", return_value=df), \
+             patch("app.signals.engine._get_regime", return_value="BULL"), \
+             patch("app.signals.engine._get_avg_volume", return_value=500_000):
             result = run_signals("CONF")
 
         strong_signals = [s for s in result if s.signal_level == "STRONG"]
@@ -163,7 +167,9 @@ class TestRunSignalsConfluence:
 
     def test_strong_signal_confidence_boosted(self):
         df = _make_confluence_df()
-        with patch("app.signals.engine.fetch_ohlcv", return_value=df):
+        with patch("app.signals.engine.fetch_ohlcv", return_value=df), \
+             patch("app.signals.engine._get_regime", return_value="BULL"), \
+             patch("app.signals.engine._get_avg_volume", return_value=500_000):
             result = run_signals("CONF")
 
         strong_signals = [s for s in result if s.signal_level == "STRONG"]
