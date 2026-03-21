@@ -93,6 +93,9 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 @authorized_only
 async def btn_scan(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    context.user_data.pop("waiting_position", None)
+    context.user_data.pop("waiting_sell_price", None)
+    context.user_data.pop("selling_ticker", None)
     await update.message.reply_text("⏳ 扫描中，请稍候...")
     from app.scheduler import scan_all_stocks
     loop = asyncio.get_running_loop()
@@ -189,6 +192,9 @@ async def btn_scan(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 @authorized_only
 async def btn_signals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    context.user_data.pop("waiting_position", None)
+    context.user_data.pop("waiting_sell_price", None)
+    context.user_data.pop("selling_ticker", None)
     db = SessionLocal()
     try:
         signals = (
@@ -224,6 +230,9 @@ async def btn_signals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 @authorized_only
 async def btn_watchlist(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    context.user_data.pop("waiting_position", None)
+    context.user_data.pop("waiting_sell_price", None)
+    context.user_data.pop("selling_ticker", None)
     db = SessionLocal()
     try:
         items = db.query(WatchlistItem).filter(WatchlistItem.is_active == True).all()  # noqa: E712
@@ -392,7 +401,11 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         db = SessionLocal()
         try:
             try:
-                price = float(yf.Ticker(ticker).fast_info.get("last_price") or 0)
+                loop = asyncio.get_running_loop()
+                price = await loop.run_in_executor(
+                    None,
+                    lambda: float(yf.Ticker(ticker).fast_info.get("last_price", 0) or 0)
+                )
             except Exception:
                 price = 0.0
             summary = get_positions_summary(db, ticker, price)
@@ -433,6 +446,9 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 @authorized_only
 async def btn_calendar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    context.user_data.pop("waiting_position", None)
+    context.user_data.pop("waiting_sell_price", None)
+    context.user_data.pop("selling_ticker", None)
     from app.bot.calendar import get_upcoming_events_from_db
     result = get_upcoming_events_from_db(days=14)
     if len(result) > 4096:
@@ -442,12 +458,16 @@ async def btn_calendar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 @authorized_only
 async def btn_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    context.user_data.pop("waiting_position", None)
+    context.user_data.pop("waiting_sell_price", None)
+    context.user_data.pop("selling_ticker", None)
     import yfinance as yf
     from app.bot.portfolio import get_all_positions, get_positions_summary, format_portfolio_message
     from app.config import settings
     db = SessionLocal()
     try:
-        raw = get_all_positions(db)
+        loop = asyncio.get_running_loop()
+        raw = await loop.run_in_executor(None, lambda: get_all_positions(db))
         if not raw:
             await update.message.reply_text("📭 暂无持仓记录。\n点击下方录入持仓：",
                                              reply_markup=portfolio_inline([]))
@@ -456,7 +476,11 @@ async def btn_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         positions = []
         for r in raw:
             try:
-                price = float(yf.Ticker(r["ticker"]).fast_info.get("last_price") or 0)
+                ticker_sym = r["ticker"]
+                price = await loop.run_in_executor(
+                    None,
+                    lambda t=ticker_sym: float(yf.Ticker(t).fast_info.get("last_price") or 0)
+                )
             except Exception:
                 price = 0.0
             summary = get_positions_summary(db, r["ticker"], price)
@@ -487,6 +511,9 @@ async def handle_portfolio_input(update: Update, context: ContextTypes.DEFAULT_T
             sell_price = float(text)
         except ValueError:
             await update.message.reply_text("❌ 价格格式不正确，请输入数字（如：910.5）", reply_markup=MAIN_KEYBOARD)
+            return
+        if sell_price <= 0:
+            await update.message.reply_text("❌ 卖出价格必须大于零", reply_markup=MAIN_KEYBOARD)
             return
         from app.bot.portfolio import sell_position
         db = SessionLocal()
@@ -529,6 +556,9 @@ async def handle_portfolio_input(update: Update, context: ContextTypes.DEFAULT_T
         except ValueError:
             await update.message.reply_text("❌ 价格或数量格式错误", reply_markup=MAIN_KEYBOARD)
             return
+        if buy_price <= 0 or shares <= 0:
+            await update.message.reply_text("❌ 价格和股数必须大于零", reply_markup=MAIN_KEYBOARD)
+            return
         from app.bot.portfolio import add_position
         db = SessionLocal()
         try:
@@ -555,7 +585,7 @@ def build_handlers() -> list:
         MessageHandler(filters.Regex("^📈 我的自选$"), btn_watchlist),
         MessageHandler(filters.Regex("^📅 大事日历$"), btn_calendar),
         MessageHandler(filters.Regex("^💼 我的持仓$"), btn_portfolio),
+        conv,
         MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex("^[📡📋📈➕💼📅]"), handle_portfolio_input),
         CallbackQueryHandler(callback_handler),
-        conv,
     ]
