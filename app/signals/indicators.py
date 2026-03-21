@@ -85,3 +85,11 @@ def calc_bollinger(close: pd.Series, period: int = 20, std: float = 2.0) -> dict
         "mid": result[mid_col].reset_index(drop=True),
         "lower": result[lower_col].reset_index(drop=True),
     }
+
+
+def calc_atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.Series:
+    """Calculate Average True Range for adaptive stop-loss."""
+    result = ta.atr(high, low, close, length=period)
+    if result is None:
+        return pd.Series([float("nan")] * len(close), index=close.index)
+    return result
