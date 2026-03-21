@@ -92,4 +92,4 @@ def calc_atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14
     result = ta.atr(high, low, close, length=period)
     if result is None:
         return pd.Series([float("nan")] * len(close), index=close.index)
-    return result
+    return result.reset_index(drop=True)
