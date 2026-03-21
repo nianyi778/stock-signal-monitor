@@ -115,7 +115,7 @@ _多指标共振看涨，ATR自适应止损，R:R 2.1..._
 
 ### 🤖 MCP Server（AI Agent 接入）
 
-11 个 MCP tools，可挂载到 Claude Desktop / Claude Code：
+13 个 MCP tools，可挂载到 Claude Desktop / Claude Code：
 
 | Tool | 功能 |
 |------|------|
