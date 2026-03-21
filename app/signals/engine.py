@@ -382,7 +382,7 @@ def run_signals(ticker: str, db=None) -> list[SignalResult]:
     for sig in raw_signals:
         w = _weight_map.get(sig.indicator, 1.0)
         if w != 1.0:
-            sig.confidence = int(min(95, sig.confidence * w))
+            sig.confidence = int(min(95, max(0, sig.confidence * w)))
 
     # --- Confluence Detection ---
     buy_signals = [s for s in raw_signals if s.signal_type == "BUY"]

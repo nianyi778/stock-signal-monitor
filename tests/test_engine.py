@@ -248,3 +248,35 @@ def test_run_signals_with_db_param(db):
         # Should not raise even with a real db session
         result = run_signals("AAPL", db=db)
         assert isinstance(result, list)
+
+
+def test_run_signals_db_volume_threshold(db):
+    """When DB has volume_ratio_min=99.0, no STRONG signals are produced."""
+    import pandas as pd
+    from unittest.mock import patch
+    from app.models import IndicatorParams
+
+    # Set an impossibly high volume threshold
+    db.add(IndicatorParams(param_key="volume_ratio_min", param_value=99.0))
+    db.commit()
+
+    # Build a DataFrame with volume = 2x average — enough for default threshold of 1.2
+    # but not for 99.0
+    rows = 250
+    close_vals = [100.0] * (rows // 2) + [x * 1.01 for x in [100.0] * (rows // 2)]
+    mock_df = pd.DataFrame({
+        "Open": close_vals, "High": [c * 1.01 for c in close_vals],
+        "Low": [c * 0.99 for c in close_vals],
+        "Close": close_vals,
+        "Volume": [2_000_000] * rows,  # volume_ratio ≈ 1.0 (flat), well below 99.0
+    })
+
+    with patch("app.signals.engine.fetch_ohlcv", return_value=mock_df):
+        from app.signals.engine import run_signals
+        result = run_signals("AAPL", db=db)
+
+    # With volume_ratio_min=99.0, no STRONG signals should pass the volume filter
+    strong_signals = [s for s in result if s.signal_level == "STRONG"]
+    assert len(strong_signals) == 0, (
+        f"Expected no STRONG signals with volume_ratio_min=99.0, got: {strong_signals}"
+    )
