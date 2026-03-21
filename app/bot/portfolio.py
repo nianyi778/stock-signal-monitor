@@ -5,8 +5,18 @@ from app.models import PositionEntry
 
 
 def add_position(db: Session, ticker: str, buy_price: float, shares: float, note: str = "") -> PositionEntry:
-    entry = PositionEntry(ticker=ticker.upper(), buy_price=buy_price, shares=shares, note=note)
+    ticker = ticker.upper()
+    entry = PositionEntry(ticker=ticker, buy_price=buy_price, shares=shares, note=note)
     db.add(entry)
+
+    # Auto-add to watchlist if not already there
+    from app.models import WatchlistItem
+    existing = db.query(WatchlistItem).filter_by(ticker=ticker).first()
+    if existing:
+        existing.is_active = True
+    else:
+        db.add(WatchlistItem(ticker=ticker, name=ticker))
+
     db.commit()
     db.refresh(entry)
     return entry
