@@ -36,10 +36,10 @@ def test_sell_position(db):
 
 
 def test_get_all_positions(db):
-    from app.bot.portfolio import add_position, get_all_positions_raw
+    from app.bot.portfolio import add_position, get_all_positions
     add_position(db, "NVDA", 882.5, 20.0)
     add_position(db, "AAPL", 200.0, 5.0)
-    positions = get_all_positions_raw(db)
+    positions = get_all_positions(db)
     tickers = [p["ticker"] for p in positions]
     assert "NVDA" in tickers
     assert "AAPL" in tickers
@@ -55,3 +55,4 @@ def test_format_portfolio_message():
     msg = format_portfolio_message(positions, portfolio_value=100_000.0)
     assert "NVDA" in msg
     assert "30" in msg
+    assert "233" in msg

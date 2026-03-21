@@ -443,11 +443,11 @@ async def btn_calendar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 @authorized_only
 async def btn_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     import yfinance as yf
-    from app.bot.portfolio import get_all_positions_raw, get_positions_summary, format_portfolio_message
+    from app.bot.portfolio import get_all_positions, get_positions_summary, format_portfolio_message
     from app.config import settings
     db = SessionLocal()
     try:
-        raw = get_all_positions_raw(db)
+        raw = get_all_positions(db)
         if not raw:
             await update.message.reply_text("📭 暂无持仓记录。\n点击下方录入持仓：",
                                              reply_markup=portfolio_inline([]))

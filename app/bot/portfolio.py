@@ -57,7 +57,7 @@ def get_positions_summary(db: Session, ticker: str, current_price: float) -> dic
     }
 
 
-def get_all_positions_raw(db: Session) -> list[dict]:
+def get_all_positions(db: Session) -> list[dict]:
     """Get all active tickers aggregate data (without fetching live prices)."""
     entries = db.query(PositionEntry).filter_by(is_active=True).all()
     tickers = list({e.ticker for e in entries})
