@@ -2,8 +2,6 @@
 import logging
 from datetime import UTC, date, datetime, timedelta
 
-import httpx
-
 from app.config import settings
 from app.database import SessionLocal
 from app.models import EconomicEvent, WatchlistItem
@@ -95,139 +93,73 @@ def _match_event_type(event_name: str) -> str | None:
 
 
 def _sync_finnhub_macro(db) -> int:
-    """Fetch macro economic events from Finnhub and enrich stored events with forecast/prior."""
-    if not settings.finnhub_api_key:
-        return 0
-
-    today = date.today()
-    from_str = today.isoformat()
-    to_str = (today + timedelta(days=60)).isoformat()
-
-    try:
-        resp = httpx.get(
-            f"https://finnhub.io/api/v1/calendar/economic?from={from_str}&to={to_str}&token={settings.finnhub_api_key}",
-            timeout=10,
-        )
-        data = resp.json()
-    except Exception as e:
-        logger.warning(f"Finnhub economic calendar fetch error: {e}")
-        return 0
-
-    updated = 0
-    for item in data.get("economicCalendar", []):
-        if item.get("country", "").upper() != "US":
-            continue
-        etype = _match_event_type(item.get("event", ""))
-        if not etype:
-            continue
-
-        # Parse event datetime (Finnhub returns ISO string)
-        try:
-            raw_time = item.get("time", "")
-            if raw_time:
-                event_dt = datetime.fromisoformat(raw_time.replace("Z", "+00:00"))
-            else:
-                continue
-        except Exception:
-            continue
-
-        # Find matching stored event within ±1 day
-        window_start = event_dt - timedelta(days=1)
-        window_end = event_dt + timedelta(days=1)
-        stored = db.query(EconomicEvent).filter(
-            EconomicEvent.event_type == etype,
-            EconomicEvent.event_date >= window_start,
-            EconomicEvent.event_date <= window_end,
-            EconomicEvent.ticker.is_(None),
-        ).first()
-
-        if not stored:
-            continue
-
-        unit = item.get("unit", "")
-        estimate = item.get("estimate")
-        prev = item.get("prev")
-        actual = item.get("actual")
-
-        parts = []
-        if actual is not None:
-            parts.append(f"实际: {_fmt_econ_value(actual, unit)}")
-        if estimate is not None:
-            parts.append(f"预期: {_fmt_econ_value(estimate, unit)}")
-        if prev is not None:
-            parts.append(f"前值: {_fmt_econ_value(prev, unit)}")
-
-        if parts:
-            new_detail = " | ".join(parts)
-            if stored.detail != new_detail:
-                stored.detail = new_detail
-                stored.updated_at = datetime.now(UTC)
-                updated += 1
-
-    if updated:
-        db.commit()
-    return updated
+    """Macro enrichment via Finnhub removed (no free alternative). Returns 0."""
+    return 0
 
 
-def _sync_finnhub_earnings(db) -> int:
-    """Fetch watchlist earnings from Finnhub and upsert into DB."""
-    if not settings.finnhub_api_key:
-        return 0
+def _sync_yfinance_earnings(db) -> int:
+    """Fetch watchlist earnings dates from yfinance and upsert into DB."""
+    import yfinance as yf
 
     watchlist = [i.ticker for i in db.query(WatchlistItem).filter(WatchlistItem.is_active == True).all()]
     if not watchlist:
         return 0
 
-    today = date.today()
-    from_str = today.isoformat()
-    to_str = (today + timedelta(days=90)).isoformat()
-
-    try:
-        resp = httpx.get(
-            f"https://finnhub.io/api/v1/calendar/earnings?from={from_str}&to={to_str}&token={settings.finnhub_api_key}",
-            timeout=10,
-        )
-        data = resp.json()
-    except Exception as e:
-        logger.error(f"Finnhub fetch error: {e}")
-        return 0
-
-    watchlist_set = {t.upper() for t in watchlist}
     count = 0
-    for e in data.get("earningsCalendar", []):
-        sym = e.get("symbol", "")
-        if sym not in watchlist_set:
+    for sym in watchlist:
+        try:
+            cal = yf.Ticker(sym).calendar
+            if not cal:
+                continue
+
+            # yfinance returns dict or DataFrame depending on version
+            if hasattr(cal, "to_dict"):
+                cal = {k: v[0] if hasattr(v, "__len__") and len(v) == 1 else v for k, v in cal.to_dict().items()}
+
+            dates = cal.get("Earnings Date", [])
+            if not dates:
+                continue
+
+            earnings_ts = dates[0] if isinstance(dates, list) else dates
+            if hasattr(earnings_ts, "to_pydatetime"):
+                event_dt = earnings_ts.to_pydatetime().replace(tzinfo=UTC)
+            else:
+                event_dt = datetime.fromisoformat(str(earnings_ts)).replace(tzinfo=UTC)
+
+            eps_est = cal.get("Earnings Average") or cal.get("EPS Estimate")
+            rev_est = cal.get("Revenue Average") or cal.get("Revenue Estimate")
+
+            detail = ""
+            if eps_est:
+                detail += f"EPS预估: ${float(eps_est):.2f}"
+            if rev_est and float(rev_est) > 1e6:
+                detail += f" | 营收预估: ${float(rev_est) / 1e9:.1f}B"
+
+            exists = db.query(EconomicEvent).filter(
+                EconomicEvent.event_date == event_dt,
+                EconomicEvent.event_type == "EARNINGS",
+                EconomicEvent.ticker == sym,
+            ).first()
+
+            if exists:
+                exists.detail = detail or exists.detail
+                exists.updated_at = datetime.now(UTC)
+            else:
+                db.add(EconomicEvent(
+                    event_date=event_dt,
+                    event_type="EARNINGS",
+                    title=f"📊 {sym} 财报发布",
+                    detail=detail or "待公布",
+                    impact="高",
+                    source="yfinance",
+                    ticker=sym,
+                ))
+                count += 1
+        except Exception as e:
+            logger.debug(f"yfinance earnings fetch failed for {sym}: {e}")
             continue
-        event_date = datetime.fromisoformat(e["date"]).replace(tzinfo=UTC)
-        exists = db.query(EconomicEvent).filter(
-            EconomicEvent.event_date == event_date,
-            EconomicEvent.event_type == "EARNINGS",
-            EconomicEvent.ticker == sym,
-        ).first()
 
-        eps_est = e.get("epsEstimate")
-        rev_est = e.get("revenueEstimate")
-        detail = ""
-        if eps_est:
-            detail += f"EPS预估: ${eps_est}"
-        if rev_est and rev_est > 1e6:
-            detail += f" | 营收预估: ${rev_est / 1e9:.1f}B"
-
-        if exists:
-            exists.detail = detail or exists.detail
-            exists.updated_at = datetime.now(UTC)
-        else:
-            db.add(EconomicEvent(
-                event_date=event_date,
-                event_type="EARNINGS",
-                title=f"📊 {sym} 财报发布",
-                detail=detail or "待公布",
-                impact="高",
-                source="finnhub",
-                ticker=sym,
-            ))
-            count += 1
-    db.commit()  # always commit — captures both inserts and detail updates
+    db.commit()
     return count
 
 
@@ -237,7 +169,7 @@ def refresh_calendar() -> dict:
     try:
         official = _sync_official_events(db)
         macro_enriched = _sync_finnhub_macro(db)
-        earnings = _sync_finnhub_earnings(db)
+        earnings = _sync_yfinance_earnings(db)
         logger.info(
             f"Calendar refreshed: {official} official added, "
             f"{macro_enriched} macro enriched with forecast/prior, "

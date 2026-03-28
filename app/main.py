@@ -1,6 +1,10 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+
+# PTB logs transient NetworkError/Bad Gateway at ERROR level but auto-retries — suppress to CRITICAL
+logging.getLogger("telegram.ext._utils.networkloop").setLevel(logging.CRITICAL)
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import signals, stocks
